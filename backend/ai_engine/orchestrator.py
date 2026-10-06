@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 from . import thermo
+from .prompts import SYSTEM
 
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env", override=False)
@@ -32,32 +33,6 @@ def _model() -> str:
     return (os.environ.get("NVIDIA_MODEL") or PREFERRED_MODEL).strip()
 
 
-SYSTEM = """You are a Creative Propulsion Engineer for AeroForge Studio.
-You design novel 3D-printable rocket/jet hardware using LEAP 71 PicoGK voxel fields.
-
-Rules:
-1) Never propose plain cylinders or flat cones as the finished part.
-2) Prefer organic conformal cooling channels, gyroid/TPMS lattices, and biomimetic manifolds.
-3) Use isentropic relations: A_t = F / (P_c * C_f); expansion ratio from P_c, P_a, gamma.
-4) Respond with ONE JSON object only (no markdown fences) with keys:
-{
-  "reasoning": "short engineering narrative",
-  "preset": "aerospike" | "regenerative" | "swirler",
-  "geometry": {
-    "throat_radius_mm": number,
-    "exit_radius_mm": number,
-    "length_mm": number,
-    "channel_count": int,
-    "channel_radius_mm": number,
-    "wall_mm": number,
-    "helix_turns": number,
-    "voxel_mm": number
-  },
-  "picogk_csharp": "C# statements for Mesh Build(Library lib) { ... } body that returns a Mesh. May call AeroForge.Geometry.EngineBuilders.* or use PicoGK Voxels/Lattice/IBoundedImplicit. Must end with return <Mesh>;"
-}
-"""
-
-
 def _extract_json(text: str) -> dict[str, Any]:
     text = text.strip()
     if text.startswith("```"):
@@ -70,6 +45,20 @@ def _extract_json(text: str) -> dict[str, Any]:
         if not m:
             raise
         return json.loads(m.group(0))
+
+
+def _infer_preset(prompt: str, preset_hint: str) -> str:
+    p = (prompt or "").lower()
+    hint = (preset_hint or "").lower()
+    if "aerospike" in p or "spike" in p:
+        return "aerospike"
+    if "swirl" in p or "injector" in p:
+        return "swirler"
+    if any(k in p for k in ("nozzle", "bell", "regen", "chamber", "rocket engine")):
+        return "regenerative"
+    if hint in ("aerospike", "regenerative", "swirler", "regen"):
+        return "regenerative" if hint == "regen" else hint
+    return "regenerative"
 
 
 def orchestrate(
@@ -87,6 +76,7 @@ def orchestrate(
         ambient_pressure_pa=ambient_pressure_pa,
         propellant=propellant,
     )
+    inferred = _infer_preset(prompt, preset)
 
     user = {
         "prompt": prompt,
@@ -94,8 +84,9 @@ def orchestrate(
             "thrust_kn": thrust_kn,
             "chamber_pressure_mpa": chamber_pressure_mpa,
             "propellant": propellant,
-            "preset_hint": preset,
+            "preset_hint": inferred,
             "thermo": sized,
+            "cad_stack": ["PicoGK", "Leap71.ShapeKernel", "Leap71.LatticeLibrary", "AeroForge.Geometry.EngineBuilders"],
         },
     }
 
@@ -106,7 +97,7 @@ def orchestrate(
         client = _client()
         stream = client.chat.completions.create(
             model=model_used,
-            temperature=0.35,
+            temperature=0.25,
             max_tokens=1800,
             stream=True,
             messages=[
@@ -122,33 +113,40 @@ def orchestrate(
         raw = "".join(chunks)
         ai = _extract_json(raw)
         reasoning = str(ai.get("reasoning") or raw[:1200])
-    except Exception as exc:  # noqa: BLE001 — fall back to deterministic creative defaults
+    except Exception as exc:  # noqa: BLE001 — fall back to deterministic ShapeKernel builders
         reasoning = (
             f"NIM call unavailable ({exc.__class__.__name__}: {exc}). "
-            "Falling back to deterministic creative geometry sized from isentropic thermo."
+            "Falling back to ShapeKernel BasePipe regenerative / aerospike builders "
+            "sized from isentropic thermo."
         )
         ai = {
-            "preset": preset or "aerospike",
+            "preset": inferred,
             "geometry": {},
-            "picogk_csharp": _default_csharp(preset or "aerospike"),
+            "picogk_csharp": _default_csharp(inferred, sized),
         }
 
     geo_in = ai.get("geometry") if isinstance(ai.get("geometry"), dict) else {}
-    chosen_preset = str(ai.get("preset") or preset or "aerospike").lower()
-    # Clamp voxel size for interactive studio latency / browser STL size.
+    chosen_preset = str(ai.get("preset") or inferred).lower()
+    if chosen_preset == "regen":
+        chosen_preset = "regenerative"
+    if chosen_preset not in ("aerospike", "regenerative", "swirler"):
+        chosen_preset = inferred
+
     raw_voxel = float(geo_in.get("voxel_mm", 1.2))
-    voxel_mm = min(2.0, max(1.0, raw_voxel if raw_voxel >= 1.0 else 1.2))
+    # Larger engines need coarser voxels for interactive STL size.
+    min_vox = 1.4 if thrust_kn >= 40 else 1.2
+    voxel_mm = min(2.0, max(min_vox, raw_voxel if raw_voxel >= min_vox else min_vox))
     geometry = {
         "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
         "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
         "length_mm": float(geo_in.get("length_mm", sized["length_mm"])),
-        "channel_count": int(min(24, max(8, geo_in.get("channel_count", 16)))),
+        "channel_count": int(min(28, max(10, geo_in.get("channel_count", 18)))),
         "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.35)),
-        "wall_mm": float(geo_in.get("wall_mm", 2.0)),
-        "helix_turns": float(geo_in.get("helix_turns", 2.2)),
+        "wall_mm": float(geo_in.get("wall_mm", 2.4)),
+        "helix_turns": float(geo_in.get("helix_turns", 2.6)),
         "voxel_mm": voxel_mm,
     }
-    csharp = str(ai.get("picogk_csharp") or _default_csharp(chosen_preset))
+    csharp = str(ai.get("picogk_csharp") or _default_csharp(chosen_preset, sized | geometry))
 
     return {
         "reasoning": reasoning,
@@ -160,23 +158,26 @@ def orchestrate(
     }
 
 
-def _default_csharp(preset: str) -> str:
+def _default_csharp(preset: str, geo: dict[str, Any]) -> str:
     builder = {
         "swirler": "BuildSwirler",
-        "regenerative": "BuildRegenBell",
-        "regen": "BuildRegenBell",
-    }.get(preset, "BuildAerospike")
+        "aerospike": "BuildAerospike",
+    }.get(preset, "BuildRegenBell")
+    rt = float(geo.get("throat_radius_mm", 38))
+    re = float(geo.get("exit_radius_mm", 95))
+    length = float(geo.get("length_mm", 220))
+    eps = float(geo.get("expansion_ratio", 8))
     return f"""
 var spec = new EngineSpec {{
     Preset = "{preset}",
-    ThroatRadiusMm = 38f,
-    ExitRadiusMm = 95f,
-    LengthMm = 170f,
-    ChannelCount = 16,
+    ThroatRadiusMm = {rt:0.3f}f,
+    ExitRadiusMm = {re:0.3f}f,
+    LengthMm = {length:0.3f}f,
+    ChannelCount = 18,
     ChannelRadiusMm = 1.35f,
-    WallMm = 2.0f,
-    HelixTurns = 2.2f,
-    ExpansionRatio = 8f
+    WallMm = 2.4f,
+    HelixTurns = 2.6f,
+    ExpansionRatio = {eps:0.3f}f
 }};
 return EngineBuilders.{builder}(lib, spec);
 """.strip()

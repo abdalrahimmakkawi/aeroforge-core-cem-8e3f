@@ -28,3 +28,8 @@ frontend/public/outputs/*
 !frontend/public/outputs/.gitkeep
 public/outputs/*
 !public/outputs/.gitkeep
+
+# LEAP71 docs (source libs committed; re-fetch restores docs)
+third_party/**/Documentation/
+third_party/**/Examples/
+third_party/**/.git/

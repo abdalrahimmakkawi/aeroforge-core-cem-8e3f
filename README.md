@@ -37,9 +37,18 @@ backend/geometry_kernel/  .NET PicoGK builders + Roslyn PicoRunner
 scripts/dev.sh            Single-command local startup
 ```
 
-Design flow: prompt + sliders → NIM creative engineer JSON → PicoGK voxel build → watertight STL under `frontend/public/outputs/` → R3F viewport.
+Design flow: prompt + sliders → NIM creative engineer JSON → ShapeKernel `BasePipe` /
+`ControlPointSpline` builders (+ PicoGK voxels) → watertight STL under
+`frontend/public/outputs/` → R3F viewport.
 
-Without a valid `NVIDIA_API_KEY`, the orchestrator falls back to deterministic creative geometry sized from isentropic relations so the studio still forges STLs.
+LEAP 71 dependencies (auto-fetched by `scripts/build_kernel.sh`):
+
+```bash
+./scripts/fetch_leap71.sh   # ShapeKernel + LatticeLibrary into third_party/
+```
+
+Without a valid `NVIDIA_API_KEY`, the orchestrator falls back to deterministic ShapeKernel
+builders sized from isentropic relations so the studio still forges STLs.
 
 ## Environment
 

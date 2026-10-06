@@ -1,13 +1,12 @@
-﻿using System.Numerics;
-using System.Text.Json;
+﻿using System.Text.Json;
 using PicoGK;
 
 namespace AeroForge.Geometry;
 
 /// <summary>
-/// CLI entry: reads a JSON payload, builds voxels with PicoGK, writes STL.
+/// CLI entry: reads a JSON payload, builds voxels with PicoGK + ShapeKernel, writes STL.
 /// Modes:
-///   {"mode":"builder","preset":"aerospike", ...thermo/geometry fields..., "output":"..."}
+///   {"mode":"builder","preset":"regenerative", ...geometry fields..., "output":"..."}
 ///   {"mode":"script","csharp":"...","output":"..."}
 /// </summary>
 public static class Program
@@ -28,7 +27,8 @@ public static class Program
                 : "engine_output.stl";
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
 
-            float voxelMm = root.TryGetProperty("voxel_mm", out var v) ? v.GetSingle() : 0.6f;
+            float voxelMm = root.TryGetProperty("voxel_mm", out var v) ? v.GetSingle() : 1.0f;
+            voxelMm = Math.Clamp(voxelMm, 0.5f, 2.0f);
 
             if (mode == "script")
             {
@@ -39,6 +39,8 @@ public static class Program
             else
             {
                 var spec = EngineSpec.FromJson(root);
+                // LEAP 71 Library.Go-equivalent: register global library so
+                // ShapeKernel BasePipe / Lattice / Voxels constructors resolve.
                 using var lib = new Library(voxelMm);
                 Library.RegisterGlobalLibrary(lib);
                 try
