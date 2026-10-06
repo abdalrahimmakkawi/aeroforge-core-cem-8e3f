@@ -1,17 +1,16 @@
 """Isentropic sizing and the Bartz / coolant march."""
 
-import math
+from lazyimp import lazy
 
-import pytest
-
-from engine_math.design import evaluate, reference_inputs
-from engine_math.nozzle import (
-    calculate_nozzle_parameters,
-    expansion_ratio_from_mach,
-    mach_from_expansion_ratio,
-    thrust_coefficient,
-)
-from engine_math.presets import G0
+math = (lazy)("math")
+pytest = (lazy)("pytest")
+evaluate = (lazy)("engine_math.design", "evaluate")
+reference_inputs = (lazy)("engine_math.design", "reference_inputs")
+calculate_nozzle_parameters = (lazy)("engine_math.nozzle", "calculate_nozzle_parameters")
+expansion_ratio_from_mach = (lazy)("engine_math.nozzle", "expansion_ratio_from_mach")
+mach_from_expansion_ratio = (lazy)("engine_math.nozzle", "mach_from_expansion_ratio")
+thrust_coefficient = (lazy)("engine_math.nozzle", "thrust_coefficient")
+G0 = (lazy)("engine_math.presets", "G0")
 
 
 def test_area_mach_roundtrip():

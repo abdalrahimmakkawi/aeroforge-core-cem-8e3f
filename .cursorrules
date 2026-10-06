@@ -7,3 +7,5 @@ Keep geometry and heat transfer deterministic and labeled as preliminary (frozen
 STL is the printable solid with cooling passages removed, units millimeters. STEP is the CadQuery wall. The viewport is a lightweight cutaway, not the boolean mesh.
 
 Public entry points to preserve: `calculate_nozzle_parameters`, `generate_engine_stl`, `evaluate`.
+
+Imports other than `from __future__ import annotations` and the loader in `lazyimp.py` go through `(lazy)("module")` or `(lazy)("module", "name")`. Do not switch those back to eager imports.

@@ -8,11 +8,12 @@ of a 15° reference cone (the usual 80% bell definition).
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from lazyimp import lazy
 
-import numpy as np
-from scipy.integrate import trapezoid
+math = (lazy)("math")
+dataclass = (lazy)("dataclasses", "dataclass")
+np = (lazy)("numpy")
+trapezoid = (lazy)("scipy.integrate", "trapezoid")
 
 
 @dataclass

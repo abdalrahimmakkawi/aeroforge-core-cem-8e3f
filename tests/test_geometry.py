@@ -1,14 +1,22 @@
 """Contour mesh, cooling passages, and file export."""
 
-from pathlib import Path
+from __future__ import annotations
 
-import numpy as np
-import trimesh
+from lazyimp import lazy
 
-from cad_engine.generator import generate_engine_stl
-from cad_engine.meshbuild import build_display, build_solid, make_tube
-from engine_math.design import evaluate, reference_inputs
-from engine_math.figures import render_station_png
+Path = (lazy)("pathlib", "Path")
+np = (lazy)("numpy")
+trimesh = (lazy)("trimesh")
+pytest = (lazy)("pytest")
+generate_engine_stl = (lazy)("cad_engine.generator", "generate_engine_stl")
+build_display = (lazy)("cad_engine.meshbuild", "build_display")
+build_solid = (lazy)("cad_engine.meshbuild", "build_solid")
+make_tube = (lazy)("cad_engine.meshbuild", "make_tube")
+_wall_profile = (lazy)("cad_engine.meshbuild", "_wall_profile")
+revolve_polygon = (lazy)("cad_engine.meshbuild", "revolve_polygon")
+evaluate = (lazy)("engine_math.design", "evaluate")
+reference_inputs = (lazy)("engine_math.design", "reference_inputs")
+render_station_png = (lazy)("engine_math.figures", "render_station_png")
 
 
 def test_tube_volume_matches_a_cylinder():
@@ -17,13 +25,7 @@ def test_tube_volume_matches_a_cylinder():
     points = np.stack([np.zeros(20), np.zeros(20), np.linspace(0.0, length, 20)], axis=1)
     mesh = make_tube(points, radius, n_seg=16)
     assert mesh.is_watertight
-    assert mesh.volume == pytest_approx(np.pi * radius**2 * length, rel=0.08)
-
-
-def pytest_approx(value, rel):
-    import pytest
-
-    return pytest.approx(value, rel=rel)
+    assert mesh.volume == pytest.approx(np.pi * radius**2 * length, rel=0.08)
 
 
 def test_display_meshes_have_matching_intensity():
@@ -42,8 +44,6 @@ def test_printable_solid_loses_volume_when_channels_are_cut(tmp_path: Path):
     design = evaluate(reference_inputs(channel_count=10, helix_turns=0.0))
     kwargs = dict(n_theta=36, n_axial=70, tube_samples=22, tube_sections=8)
     solid = build_solid(design, **kwargs)
-    from cad_engine.meshbuild import _wall_profile, revolve_polygon
-
     uncut = revolve_polygon(_wall_profile(design, n_axial=70), n_theta=36)
     assert solid.is_watertight
     assert solid.metadata["volume_m3"] < uncut.volume * 0.995

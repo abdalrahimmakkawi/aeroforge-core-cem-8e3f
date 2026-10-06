@@ -14,12 +14,13 @@ value from chamber temperature, γ, and molar mass.
 
 from __future__ import annotations
 
-import math
+from lazyimp import lazy
 
-from scipy.optimize import brentq
-
-from engine_math.contour import build_gas_contour
-from engine_math.presets import G0, R_UNIV
+math = (lazy)("math")
+brentq = (lazy)("scipy.optimize", "brentq")
+build_gas_contour = (lazy)("engine_math.contour", "build_gas_contour")
+G0 = (lazy)("engine_math.presets", "G0")
+R_UNIV = (lazy)("engine_math.presets", "R_UNIV")
 
 
 def characteristic_velocity(gamma: float, chamber_temp_k: float, molar_mass: float) -> float:

@@ -9,13 +9,14 @@ not a conjugate CFD result.
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
+from lazyimp import lazy
 
-import numpy as np
-
-from engine_math.contour import GasContour, WallContours
-from engine_math.nozzle import mach_from_expansion_ratio
+math = (lazy)("math")
+dataclass = (lazy)("dataclasses", "dataclass")
+np = (lazy)("numpy")
+GasContour = (lazy)("engine_math.contour", "GasContour")
+WallContours = (lazy)("engine_math.contour", "WallContours")
+mach_from_expansion_ratio = (lazy)("engine_math.nozzle", "mach_from_expansion_ratio")
 
 
 @dataclass

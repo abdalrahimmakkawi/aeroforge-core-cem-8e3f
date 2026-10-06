@@ -8,11 +8,15 @@ attempted and, if the kernel rejects a path, the exact wall solid is kept.
 
 from __future__ import annotations
 
-from pathlib import Path
+from lazyimp import lazy
 
-import numpy as np
-
-from cad_engine.meshbuild import _wall_profile, build_solid, channel_paths, design_from_params
+Path = (lazy)("pathlib", "Path")
+np = (lazy)("numpy")
+cq = (lazy)("cadquery")
+_wall_profile = (lazy)("cad_engine.meshbuild", "_wall_profile")
+build_solid = (lazy)("cad_engine.meshbuild", "build_solid")
+channel_paths = (lazy)("cad_engine.meshbuild", "channel_paths")
+design_from_params = (lazy)("cad_engine.meshbuild", "design_from_params")
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUTS = ROOT / "outputs"
@@ -31,8 +35,6 @@ def generate_engine_stl(params: dict, output_path: str = "outputs/engine.stl", *
 
 
 def _revolved_wall(loop_mm: np.ndarray):
-    import cadquery as cq
-
     pts = [(float(r), float(z)) for r, z in loop_mm]
     return cq.Workplane("XZ").polyline(pts).close().revolve(360, (0, 0, 0), (0, 0, 1))
 
@@ -44,8 +46,6 @@ def generate_engine_step(
     cut_channels: bool = True,
 ) -> tuple[str, str]:
     """Write a STEP solid. Returns (path, note)."""
-    import cadquery as cq
-
     design = design_from_params(params)
     loop = _wall_profile(design, n_axial=80) * 1000.0
     # Keep the axis point off exact zero so the revolve stays a valid solid.

@@ -22,6 +22,8 @@ The app listens on port **8742**. Open [http://127.0.0.1:8742](http://127.0.0.1:
 pytest
 ```
 
+Libraries load on first use. Each import is written `(lazy)("module")` or `(lazy)("module", "name")`, so NumPy, SciPy, Trimesh, Matplotlib, and CadQuery stay out of the process until a calculation, a mesh, or an export actually needs them.
+
 ## Layout
 
 ```

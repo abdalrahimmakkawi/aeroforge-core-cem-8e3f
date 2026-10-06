@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-import math
+from lazyimp import lazy
 
-import numpy as np
-from scipy.integrate import trapezoid
-
-from engine_math.contour import build_wall
-from engine_math.nozzle import calculate_nozzle_parameters
-from engine_math.presets import MATERIALS, PROPELLANTS
-from engine_math.thermal import analyze_thermal, size_channel_diameter
+math = (lazy)("math")
+np = (lazy)("numpy")
+trapezoid = (lazy)("scipy.integrate", "trapezoid")
+build_wall = (lazy)("engine_math.contour", "build_wall")
+calculate_nozzle_parameters = (lazy)("engine_math.nozzle", "calculate_nozzle_parameters")
+MATERIALS = (lazy)("engine_math.presets", "MATERIALS")
+PROPELLANTS = (lazy)("engine_math.presets", "PROPELLANTS")
+analyze_thermal = (lazy)("engine_math.thermal", "analyze_thermal")
+size_channel_diameter = (lazy)("engine_math.thermal", "size_channel_diameter")
 
 
 def reference_inputs(**overrides) -> dict:

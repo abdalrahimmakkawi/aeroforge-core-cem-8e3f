@@ -7,10 +7,12 @@ with those passages subtracted, so the STL is a manifold part.
 
 from __future__ import annotations
 
-import numpy as np
-import trimesh
+from lazyimp import lazy
 
-from engine_math.design import evaluate
+np = (lazy)("numpy")
+trimesh = (lazy)("trimesh")
+evaluate = (lazy)("engine_math.design", "evaluate")
+reference_inputs = (lazy)("engine_math.design", "reference_inputs")
 
 
 def _downsample_indices(n: int, target: int) -> np.ndarray:
@@ -428,8 +430,6 @@ def design_from_params(params: dict) -> dict:
     """Accept either a finished design or the flight-point input dict."""
     if "wall" in params and "thermal" in params:
         return params
-    from engine_math.design import reference_inputs
-
     merged = reference_inputs()
     for key, value in params.items():
         if key in merged and np.isscalar(value):

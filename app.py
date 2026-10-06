@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+from lazyimp import lazy
+
+sys = (lazy)("sys")
+Path = (lazy)("pathlib", "Path")
 
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import numpy as np
-import plotly.graph_objects as go
-import streamlit as st
-from plotly.subplots import make_subplots
+np = (lazy)("numpy")
+go = (lazy)("plotly.graph_objects")
+st = (lazy)("streamlit")
+make_subplots = (lazy)("plotly.subplots", "make_subplots")
 
-from cad_engine.meshbuild import build_display
-from engine_math.design import evaluate
-from engine_math.presets import AMBIENTS, MATERIALS, PROPELLANTS
+build_display = (lazy)("cad_engine.meshbuild", "build_display")
+evaluate = (lazy)("engine_math.design", "evaluate")
+export_engine = (lazy)("cad_engine.generator", "export_engine")
+render_station_png = (lazy)("engine_math.figures", "render_station_png")
+AMBIENTS = (lazy)("engine_math.presets", "AMBIENTS")
+MATERIALS = (lazy)("engine_math.presets", "MATERIALS")
+PROPELLANTS = (lazy)("engine_math.presets", "PROPELLANTS")
 
 st.set_page_config(
     page_title="NeuralOS — Generative Propulsion",
@@ -494,9 +500,6 @@ export_key = _freeze(inputs) + (("step_channels", bool(cut_step)),)
 
 @st.cache_data(show_spinner="Cutting cooling passages and writing STL / STEP…")
 def cached_export(key: tuple) -> dict:
-    from cad_engine.generator import export_engine
-    from engine_math.figures import render_station_png
-
     step_channels = dict(key).pop("step_channels")
     flight = {k: v for k, v in key if k != "step_channels"}
     bundle = export_engine(flight, cut_step_channels=bool(step_channels))

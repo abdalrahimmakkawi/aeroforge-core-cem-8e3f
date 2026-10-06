@@ -1,5 +1,7 @@
 """Thermodynamics, contour, and regenerative-cooling estimates."""
 
-from engine_math.design import evaluate
+from lazyimp import lazy
+
+evaluate = (lazy)("engine_math.design", "evaluate")
 
 __all__ = ["evaluate"]

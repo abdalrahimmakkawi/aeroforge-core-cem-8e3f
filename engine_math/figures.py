@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from lazyimp import lazy
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+Path = (lazy)("pathlib", "Path")
+matplotlib = (lazy)("matplotlib")
+plt = (lazy)("matplotlib.pyplot")
 
 
 def render_station_png(design: dict, path: str | Path) -> str:
+    matplotlib.use("Agg")
     wall = design["wall"]
     thermal = design["thermal"]
     z = wall.z_m * 1000.0
