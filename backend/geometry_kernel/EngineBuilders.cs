@@ -115,21 +115,23 @@ public static class EngineBuilders
         Voxels vox = pipe.voxConstruct();
 
         // Conformal helical cooling channels — follow outer wall mid-plane.
-        int n = Math.Clamp(spec.ChannelCount, 10, 36);
-        float tubeR = Math.Clamp(spec.ChannelRadiusMm, 0.7f, wall * 0.42f);
+        // Keep tube diameter well under wall thickness so channels stay enclosed
+        // (oversize beams punch through and look like disconnected rings).
+        int n = Math.Clamp(spec.ChannelCount, 10, 28);
+        float tubeR = Math.Min(Math.Max(spec.ChannelRadiusMm, 0.6f), wall * 0.32f);
         var channelLattice = new Lattice();
         for (int i = 0; i < n; i++)
         {
             float phase = 2f * MathF.PI * i / n;
             Vector3? prev = null;
-            const int samples = 96;
+            const int samples = 80;
             for (int s = 0; s <= samples; s++)
             {
                 float t = s / (float)samples;
                 float z = t * L;
                 float rGas = GasRadius(t);
                 float theta = phase + spec.HelixTurns * 2f * MathF.PI * t;
-                float rr = rGas + wall * 0.52f;
+                float rr = rGas + wall * 0.50f;
                 var p = new Vector3(rr * MathF.Cos(theta), rr * MathF.Sin(theta), z);
                 if (prev is Vector3 pv)
                     channelLattice.AddBeam(pv, tubeR, p, tubeR, false);
@@ -138,14 +140,18 @@ public static class EngineBuilders
         }
         vox = vox.voxBoolSubtract(new Voxels(channelLattice));
 
+        // Light outer fillet for a continuous print-ready jacket
+        try { vox.Fillet(0.6f); } catch { /* optional */ }
+
         // Inlet manifold ring — fused to chamber OD (not floating)
-        float manR = GasRadius(0.05f) + wall * 0.55f;
+        float manR = GasRadius(0.05f) + wall * 0.50f;
+        float manBeam = Math.Min(tubeR * 1.35f, wall * 0.38f);
         var manifold = new BaseRing(
             new LocalFrame(new Vector3(0, 0, L * 0.04f)),
             manR,
-            tubeR * 1.6f);
-        manifold.SetPolarSteps(72);
-        manifold.SetRadialSteps(48);
+            manBeam);
+        manifold.SetPolarSteps(64);
+        manifold.SetRadialSteps(40);
         vox = vox.voxBoolAdd(manifold.voxConstruct());
 
         return vox.mshAsMesh();
@@ -196,21 +202,21 @@ public static class EngineBuilders
         );
         Voxels vox = pipe.voxConstruct();
 
-        int n = Math.Clamp(spec.ChannelCount, 8, 28);
-        float tubeR = Math.Clamp(spec.ChannelRadiusMm, 0.7f, wall * 0.45f);
+        int n = Math.Clamp(spec.ChannelCount, 8, 24);
+        float tubeR = Math.Min(Math.Max(spec.ChannelRadiusMm, 0.6f), wall * 0.32f);
         var lat = new Lattice();
         for (int i = 0; i < n; i++)
         {
             float phase = 2f * MathF.PI * i / n;
             Vector3? prev = null;
-            const int samples = 72;
+            const int samples = 64;
             for (int s = 0; s <= samples; s++)
             {
                 float t = s / (float)samples;
                 float z = t * L * 0.97f;
                 float rPlug = PlugRadius(t);
                 float theta = phase + spec.HelixTurns * 2f * MathF.PI * t;
-                float rr = MathF.Max(rPlug - wall * 0.55f, tubeR * 2.2f);
+                float rr = MathF.Max(rPlug - wall * 0.50f, tubeR * 2.5f);
                 var p = new Vector3(rr * MathF.Cos(theta), rr * MathF.Sin(theta), z);
                 if (prev is Vector3 pv)
                     lat.AddBeam(pv, tubeR, p, tubeR, false);
@@ -218,6 +224,7 @@ public static class EngineBuilders
             }
         }
         vox = vox.voxBoolSubtract(new Voxels(lat));
+        try { vox.Fillet(0.5f); } catch { /* optional */ }
         return vox.mshAsMesh();
     }
 
