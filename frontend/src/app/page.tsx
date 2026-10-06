@@ -81,8 +81,23 @@ export default function StudioPage() {
           use_ai_script: false,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.detail?.message || data?.detail || res.statusText);
+      const raw = await res.text();
+      let data: DesignResult & { detail?: unknown };
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(raw.slice(0, 200) || res.statusText);
+      }
+      if (!res.ok) {
+        const detail = data?.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : detail && typeof detail === "object" && "message" in detail
+              ? String((detail as { message: string }).message)
+              : res.statusText;
+        throw new Error(msg);
+      }
       setResult(data);
       setChat((c) => [
         ...c,
