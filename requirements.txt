@@ -9,6 +9,8 @@ shapely>=2.0
 streamlit>=1.40
 plotly>=5.22
 cadquery>=2.4
+openai>=1.40
+python-dotenv>=1.0
 
 # Tests
 pytest>=8.0

@@ -34,11 +34,22 @@ engine_math/thermal.py  Bartz heat flux and regenerative coolant march
 engine_math/design.py   One call that returns the full firing point
 cad_engine/meshbuild.py Cutaway meshes and the printable solid
 cad_engine/generator.py STL and STEP export
+llm_client.py           OpenAI-compatible client for NVIDIA NIM
 outputs/                Generated STL, STEP, and figures
 ```
 
 `generate_engine_stl(params)` writes `outputs/engine.stl`. Pass the same flight-point dictionary the dashboard uses, or the scalar dictionary returned by `calculate_nozzle_parameters`.
 
+## LLM (NVIDIA NIM)
+
+Inference uses the OpenAI Python SDK against NVIDIA Build:
+
+```bash
+cp .env.example .env   # set NVIDIA_API_KEY
+python -c "from llm_client import chat_text; print(chat_text([{'role':'user','content':'ping'}]))"
+```
+
+Default preferred model: `nvidia/nemotron-4-340b-instruct` (`meta/llama-3.3-70b-instruct` is retired on this endpoint). Override with `NVIDIA_MODEL` in `.env` if that model is not enabled for your key. Alternate: `nvidia/llama-3.1-nemotron-70b-instruct`. Base URL: `https://integrate.api.nvidia.com/v1`.
 ## Geometry kernel
 
 CadQuery builds the STEP solid of revolution. Trimesh and manifold3d subtract the coolant passages for the STL, which keeps the interactive view fast and the print file manifold. PicoGK is the open voxel kernel (C# / C++) to reach for when a design needs true volumetric lattices rather than swept circular passages. It is not a runtime dependency of this Python MVP.
