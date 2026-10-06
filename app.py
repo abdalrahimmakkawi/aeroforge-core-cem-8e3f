@@ -94,7 +94,7 @@ def _freeze(inputs: dict) -> tuple:
     return tuple(frozen)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner="Sizing the chamber and building the cutaway…")
 def cached_view(key: tuple, mode: str) -> dict:
     design = evaluate(dict(key))
     nozzle = design["nozzle"]
@@ -196,7 +196,7 @@ def _figure_3d(payload: dict) -> go.Figure:
                 name=trace["name"],
                 showlegend=show,
                 hovertemplate=f"{trace['name']}<br>%{{intensity:.0f}} K<extra></extra>",
-                lighting=dict(ambient=0.48, diffuse=0.72, specular=0.28, roughness=0.55, fresnel=0.15),
+                lighting=dict(ambient=0.55, diffuse=0.65, specular=0.12, roughness=0.7, fresnel=0.05),
                 flatshading=False,
             )
         )

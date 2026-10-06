@@ -148,28 +148,33 @@ def make_tube(points: np.ndarray, radius: float, n_seg: int = 10, *, process: bo
     cos_a = np.cos(angles)
     sin_a = np.sin(angles)
     n_pts = len(points)
-    ring = np.empty((n_pts, n_seg, 3))
-    for i in range(n_pts):
-        ring[i] = points[i] + radius * (cos_a[:, None] * normals[i] + sin_a[:, None] * binormals[i])
+    # Broadcast the ring in one shot instead of per-station Python loops.
+    ring = (
+        points[:, None, :]
+        + radius * (cos_a[None, :, None] * normals[:, None, :] + sin_a[None, :, None] * binormals[:, None, :])
+    )
     verts = ring.reshape(-1, 3)
-    faces: list[tuple[int, int, int]] = []
-    for i in range(n_pts - 1):
-        for j in range(n_seg):
-            j2 = (j + 1) % n_seg
-            a = i * n_seg + j
-            b = i * n_seg + j2
-            c = (i + 1) * n_seg + j2
-            d = (i + 1) * n_seg + j
-            faces.append((a, d, c))
-            faces.append((a, c, b))
+    i_idx = np.arange(n_pts - 1)[:, None]
+    j_idx = np.arange(n_seg)[None, :]
+    j2 = (j_idx + 1) % n_seg
+    a = i_idx * n_seg + j_idx
+    b = i_idx * n_seg + j2
+    c = (i_idx + 1) * n_seg + j2
+    d = (i_idx + 1) * n_seg + j_idx
+    side = np.stack([np.stack([a, d, c], axis=-1), np.stack([a, c, b], axis=-1)], axis=2).reshape(-1, 3)
     start_center = len(verts)
     end_center = start_center + 1
     verts = np.vstack([verts, points[0], points[-1]])
-    for j in range(n_seg):
-        j2 = (j + 1) % n_seg
-        faces.append((start_center, j2, j))
-        faces.append((end_center, (n_pts - 1) * n_seg + j, (n_pts - 1) * n_seg + j2))
-    mesh = trimesh.Trimesh(vertices=verts, faces=np.asarray(faces, dtype=np.int64), process=False)
+    j = np.arange(n_seg)
+    j2 = (j + 1) % n_seg
+    caps = np.vstack(
+        [
+            np.stack([np.full(n_seg, start_center), j2, j], axis=1),
+            np.stack([np.full(n_seg, end_center), (n_pts - 1) * n_seg + j, (n_pts - 1) * n_seg + j2], axis=1),
+        ]
+    )
+    faces = np.vstack([side, caps]).astype(np.int64)
+    mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
     return _orient(mesh) if process else mesh
 
 
@@ -240,41 +245,50 @@ def revolved_annulus(
     vertices = np.vstack([v0, v1])
     intensity = np.concatenate([s0, s1])
 
-    def vid(layer: int, i: int, j: int) -> int:
-        return layer * n_z * n_th + i * n_th + j
-
-    faces: list[tuple[int, int, int]] = []
     j_count = n_th if full else n_th - 1
-    for i in range(n_z - 1):
-        for j in range(j_count):
-            j2 = (j + 1) % n_th if full else j + 1
-            a, b = vid(1, i, j), vid(1, i, j2)
-            c3, d = vid(1, i + 1, j2), vid(1, i + 1, j)
-            faces.append((a, d, c3))
-            faces.append((a, c3, b))
-            a, b = vid(0, i, j), vid(0, i, j2)
-            c3, d = vid(0, i + 1, j2), vid(0, i + 1, j)
-            faces.append((a, b, c3))
-            faces.append((a, c3, d))
-    for j in range(j_count):
-        j2 = (j + 1) % n_th if full else j + 1
-        faces.append((vid(0, 0, j), vid(1, 0, j), vid(1, 0, j2)))
-        faces.append((vid(0, 0, j), vid(1, 0, j2), vid(0, 0, j2)))
-        last = n_z - 1
-        faces.append((vid(0, last, j), vid(0, last, j2), vid(1, last, j2)))
-        faces.append((vid(0, last, j), vid(1, last, j2), vid(1, last, j)))
+    i_idx = np.arange(n_z - 1)[:, None]
+    j_idx = np.arange(j_count)[None, :]
+    j2 = (j_idx + 1) % n_th if full else j_idx + 1
+
+    def layer_quads(layer: int, outward: bool) -> np.ndarray:
+        base = layer * n_z * n_th
+        a = base + i_idx * n_th + j_idx
+        b = base + i_idx * n_th + j2
+        c3 = base + (i_idx + 1) * n_th + j2
+        d = base + (i_idx + 1) * n_th + j_idx
+        if outward:
+            tris = np.stack([np.stack([a, d, c3], axis=-1), np.stack([a, c3, b], axis=-1)], axis=2)
+        else:
+            tris = np.stack([np.stack([a, b, c3], axis=-1), np.stack([a, c3, d], axis=-1)], axis=2)
+        return tris.reshape(-1, 3)
+
+    faces = [layer_quads(1, True), layer_quads(0, False)]
+    j_cap = np.arange(j_count)
+    j2_cap = (j_cap + 1) % n_th if full else j_cap + 1
+    for iz in (0, n_z - 1):
+        a0 = iz * n_th + j_cap
+        b0 = iz * n_th + j2_cap
+        a1 = n_z * n_th + iz * n_th + j_cap
+        b1 = n_z * n_th + iz * n_th + j2_cap
+        if iz == 0:
+            faces.append(np.stack([a0, a1, b1], axis=1))
+            faces.append(np.stack([a0, b1, b0], axis=1))
+        else:
+            faces.append(np.stack([a0, b0, b1], axis=1))
+            faces.append(np.stack([a0, b1, a1], axis=1))
     if not full:
-        for j, sign in ((0, -1), (n_th - 1, 1)):
-            for i in range(n_z - 1):
-                a, b = vid(0, i, j), vid(1, i, j)
-                c3, d = vid(1, i + 1, j), vid(0, i + 1, j)
-                if sign < 0:
-                    faces.append((a, d, c3))
-                    faces.append((a, c3, b))
-                else:
-                    faces.append((a, b, c3))
-                    faces.append((a, c3, d))
-    return vertices, np.asarray(faces, dtype=np.int64), intensity
+        for j, outward in ((0, False), (n_th - 1, True)):
+            a = i_idx[:, 0] * n_th + j
+            b = n_z * n_th + i_idx[:, 0] * n_th + j
+            c3 = n_z * n_th + (i_idx[:, 0] + 1) * n_th + j
+            d = (i_idx[:, 0] + 1) * n_th + j
+            if outward:
+                faces.append(np.stack([a, b, c3], axis=1))
+                faces.append(np.stack([a, c3, d], axis=1))
+            else:
+                faces.append(np.stack([a, d, c3], axis=1))
+                faces.append(np.stack([a, c3, b], axis=1))
+    return vertices, np.vstack(faces).astype(np.int64), intensity
 
 
 def revolved_surface(
@@ -293,17 +307,15 @@ def revolved_surface(
     vals = np.broadcast_to(intens[:, None], (n_z, n_th))
     vertices = np.stack([x, y, zz], axis=-1).reshape(-1, 3)
     intensity = np.array(vals, dtype=float).reshape(-1)
-    faces: list[tuple[int, int, int]] = []
-    for i in range(n_z - 1):
-        for j in range(n_th):
-            j2 = (j + 1) % n_th
-            a = i * n_th + j
-            b = i * n_th + j2
-            c3 = (i + 1) * n_th + j2
-            d = (i + 1) * n_th + j
-            faces.append((a, d, c3))
-            faces.append((a, c3, b))
-    return vertices, np.asarray(faces, dtype=np.int64), intensity
+    i_idx = np.arange(n_z - 1)[:, None]
+    j_idx = np.arange(n_th)[None, :]
+    j2 = (j_idx + 1) % n_th
+    a = i_idx * n_th + j_idx
+    b = i_idx * n_th + j2
+    c3 = (i_idx + 1) * n_th + j2
+    d = (i_idx + 1) * n_th + j_idx
+    faces = np.stack([np.stack([a, d, c3], axis=-1), np.stack([a, c3, b], axis=-1)], axis=2).reshape(-1, 3)
+    return vertices, faces.astype(np.int64), intensity
 
 
 def _tube_display(path_m: np.ndarray, radius_m: float, temps: np.ndarray, n_seg: int = 8):
@@ -340,14 +352,18 @@ def _sample_design(design: dict, n_axial: int = 100):
 
 
 def build_display(design: dict, mode: str = "cutaway") -> list[dict]:
-    """Meshes in millimeters for the Plotly viewport."""
-    s = _sample_design(design, 96)
+    """Meshes in millimeters for the Plotly viewport.
+
+    Resolution stays below the printable STL on purpose: the browser WebGL
+    path is the load bottleneck, not the physics.
+    """
+    s = _sample_design(design, 56)
     traces: list[dict] = []
     gas = design["gas"]
     bulk_r = float(s["r_jacket_out"][0])
     bulk_h = float(gas.bulkhead_m)
     bulk_t = float(s["tw"][0])
-    cyl = trimesh.creation.cylinder(radius=bulk_r * 1000.0, height=bulk_h * 1000.0, sections=40)
+    cyl = trimesh.creation.cylinder(radius=bulk_r * 1000.0, height=bulk_h * 1000.0, sections=24)
     cyl.apply_translation((0.0, 0.0, bulk_h * 500.0))
     traces.append(
         {
@@ -368,10 +384,10 @@ def build_display(design: dict, mode: str = "cutaway") -> list[dict]:
             s["tw"],
             theta0=0.0,
             theta1=2.0 * np.pi,
-            n_theta=48,
+            n_theta=28,
         )
         traces.append({"vertices": v, "faces": f, "intensity": inten, "name": "Closeout", "opacity": 1.0})
-        v, f, inten = revolved_surface(s["z"], s["r_gas"], s["tw"], n_theta=40)
+        v, f, inten = revolved_surface(s["z"], s["r_gas"], s["tw"], n_theta=24)
         traces.append({"vertices": v, "faces": f, "intensity": inten, "name": "Gas wall", "opacity": 1.0})
         return traces
 
@@ -383,7 +399,7 @@ def build_display(design: dict, mode: str = "cutaway") -> list[dict]:
         s["t_root"],
         theta0=0.0,
         theta1=2.0 * np.pi,
-        n_theta=48,
+        n_theta=28,
     )
     traces.append({"vertices": v, "faces": f, "intensity": inten, "name": "Hot wall", "opacity": 1.0})
 
@@ -396,7 +412,7 @@ def build_display(design: dict, mode: str = "cutaway") -> list[dict]:
         s["tc"],
         theta0=window,
         theta1=2.0 * np.pi - window,
-        n_theta=40,
+        n_theta=24,
     )
     traces.append({"vertices": v, "faces": f, "intensity": inten, "name": "Closeout", "opacity": 1.0})
 
@@ -406,9 +422,9 @@ def build_display(design: dict, mode: str = "cutaway") -> list[dict]:
     blocks_f = []
     blocks_i = []
     offset = 0
-    for path in channel_paths(design, n_samples=28):
+    for path in channel_paths(design, n_samples=16):
         temps = np.interp(path[:, 2], thermal.z_m, thermal.coolant_temp_k)
-        v, f, inten = _tube_display(path, radius, temps, n_seg=7)
+        v, f, inten = _tube_display(path, radius, temps, n_seg=5)
         blocks_v.append(v)
         blocks_f.append(f + offset)
         blocks_i.append(inten)
