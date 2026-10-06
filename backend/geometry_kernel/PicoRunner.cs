@@ -22,7 +22,7 @@ public static class PicoRunner
 
     public static void CompileAndRun(string userCode, string outputStl, float voxelMm)
     {
-        string wrapped = WrapUserCode(userCode);
+        string wrapped = WrapUserCode(StripUsings(userCode));
         var compilation = CSharpCompilation.Create(
             assemblyName: "AeroForgeDynamic_" + Guid.NewGuid().ToString("N"),
             syntaxTrees: new[] { CSharpSyntaxTree.ParseText(wrapped) },
@@ -67,6 +67,25 @@ public static class PicoRunner
             Library.UnregisterGlobalLibrary();
             alc.Unload();
         }
+    }
+
+    /// <summary>
+    /// User / LLM scripts often include <c>using AeroForge.Modules;</c> etc.
+    /// Those are already provided by the wrapper — keep them inside Build() and Roslyn
+    /// treats <c>using X;</c> as a dispose-using statement (CS0118).
+    /// </summary>
+    private static string StripUsings(string userCode)
+    {
+        var lines = userCode.Replace("\r\n", "\n").Split('\n');
+        var kept = new List<string>();
+        foreach (string raw in lines)
+        {
+            string t = raw.TrimStart();
+            if (t.StartsWith("using ", StringComparison.Ordinal) && t.Contains(';') && !t.Contains('('))
+                continue; // using directive
+            kept.Add(raw);
+        }
+        return string.Join("\n", kept).Trim();
     }
 
     private static string WrapUserCode(string userCode)
