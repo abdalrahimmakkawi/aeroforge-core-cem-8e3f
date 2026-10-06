@@ -9,7 +9,22 @@ __pycache__/
 .streamlit/secrets.toml
 .env
 .env.local
+logs/
+*.log
 
-# Generated hardware files
+# Node
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# .NET
+**/bin/
+**/obj/
+
+# Generated hardware / STLs
 outputs/*
 !outputs/.gitkeep
+frontend/public/outputs/*
+!frontend/public/outputs/.gitkeep
+public/outputs/*
+!public/outputs/.gitkeep

@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>AeroForge.Geometry</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
+    <PackageReference Include="PicoGK" Version="2.3.0" />
+  </ItemGroup>
+
+  <!-- PicoGK NuGet ships win/osx only; Linux OpenVDB runtime is vendored here. -->
+  <ItemGroup>
+    <Content Include="native/linux-x64/picogk.26.2.so" Link="picogk.26.2.so" CopyToOutputDirectory="PreserveNewest" Condition="Exists('native/linux-x64/picogk.26.2.so')" />
+  </ItemGroup>
+
+</Project>
