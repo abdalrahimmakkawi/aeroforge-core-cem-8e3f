@@ -57,19 +57,21 @@ function StlMesh({
     };
   }, [url, onMetrics]);
 
-  const clipPlane = useMemo(
-    () => new THREE.Plane(new THREE.Vector3(0, -1, 0), sliceZ),
-    [sliceZ]
-  );
+  const clipPlane = useMemo(() => {
+    // Park the plane outside the mesh when the slider is near either end.
+    if (Math.abs(sliceZ) >= 78) return null;
+    return new THREE.Plane(new THREE.Vector3(0, -1, 0), sliceZ);
+  }, [sliceZ]);
 
   const material = useMemo(() => {
+    const planes = clipPlane ? [clipPlane] : [];
     if (mode === "wireframe") {
       return new THREE.MeshBasicMaterial({
         color: "#1f4d56",
         wireframe: true,
         transparent: true,
         opacity: 0.85,
-        clippingPlanes: [clipPlane],
+        clippingPlanes: planes,
         clipShadows: true,
       });
     }
@@ -81,7 +83,7 @@ function StlMesh({
         vertexColors: true,
         emissive: new THREE.Color("#5c2a1a"),
         emissiveIntensity: 0.08,
-        clippingPlanes: [clipPlane],
+        clippingPlanes: planes,
         clipShadows: true,
       });
     }
@@ -91,7 +93,7 @@ function StlMesh({
       roughness: 0.32,
       envMapIntensity: 0.95,
       side: THREE.DoubleSide,
-      clippingPlanes: [clipPlane],
+      clippingPlanes: planes,
       clipShadows: true,
     });
   }, [mode, clipPlane]);
@@ -124,16 +126,18 @@ function StlMesh({
   return (
     <Center>
       <mesh geometry={geom} material={material} castShadow receiveShadow />
-      <mesh position={[0, sliceZ, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[240, 240]} />
-        <meshBasicMaterial
-          color="#1f4d56"
-          transparent
-          opacity={0.06}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
+      {clipPlane && (
+        <mesh position={[0, sliceZ, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[240, 240]} />
+          <meshBasicMaterial
+            color="#1f4d56"
+            transparent
+            opacity={0.06}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
     </Center>
   );
 }

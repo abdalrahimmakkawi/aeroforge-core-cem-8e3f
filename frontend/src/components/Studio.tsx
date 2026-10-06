@@ -64,7 +64,7 @@ export default function Studio() {
   const [propellant, setPropellant] = useState<(typeof FUELS)[number]["id"]>("lox_methane");
   const [preset, setPreset] = useState<(typeof PRESETS)[number]["id"]>("aerospike");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
-  const [sliceZ, setSliceZ] = useState(0);
+  const [sliceZ, setSliceZ] = useState(80);
   const [busy, setBusy] = useState(false);
   const [chat, setChat] = useState<ChatItem[]>([
     {
@@ -275,10 +275,12 @@ export default function Studio() {
               </div>
               <div className="space-y-2">
                 <div className="flex justify-between text-xs text-[var(--muted)]">
-                  <span>Section cut · Z axis</span>
-                  <span className="font-mono tabular-nums">{sliceZ.toFixed(0)} mm</span>
+                  <span>Section cut · Z (ends = off)</span>
+                  <span className="font-mono tabular-nums">
+                    {Math.abs(sliceZ) >= 78 ? "off" : `${sliceZ.toFixed(0)} mm`}
+                  </span>
                 </div>
-                <Slider value={[sliceZ]} min={-80} max={80} step={1} onValueChange={(v) => setSliceZ(v[0] ?? 0)} />
+                <Slider value={[sliceZ]} min={-80} max={80} step={1} onValueChange={(v) => setSliceZ(v[0] ?? 80)} />
               </div>
             </div>
           </section>
