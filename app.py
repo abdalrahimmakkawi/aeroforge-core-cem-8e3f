@@ -202,7 +202,7 @@ def _figure_3d(payload: dict) -> go.Figure:
         paper_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=0, r=0, t=0, b=0),
         height=680,
-        uirevision="neuralos-camera",
+        uirevision="neuralos-camera-2",
         legend=dict(orientation="h", yanchor="bottom", y=1.01, x=0, font=dict(color="#d5dbe6")),
         scene=dict(
             aspectmode="data",
@@ -210,7 +210,7 @@ def _figure_3d(payload: dict) -> go.Figure:
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
             zaxis=dict(visible=False),
-            camera=dict(eye=dict(x=1.55, y=0.35, z=0.72), up=dict(x=0, y=0, z=1)),
+            camera=dict(eye=dict(x=2.35, y=1.55, z=1.05), up=dict(x=0, y=0, z=1)),
         ),
     )
     return fig
