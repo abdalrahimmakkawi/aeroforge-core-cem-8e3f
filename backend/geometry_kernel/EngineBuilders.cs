@@ -14,7 +14,7 @@ public sealed class EngineSpec
     public float ExitRadiusMm { get; init; } = 90f;
     public float LengthMm { get; init; } = 280f;
     public float ExpansionRatio { get; init; } = 8f;
-    public int ChannelCount { get; init; } = 24;
+    public int ChannelCount { get; init; } = 48;
     public float ChannelRadiusMm { get; init; } = 1.4f;
     public float WallMm { get; init; } = 3.5f;
     public float HelixTurns { get; init; } = 2.6f;

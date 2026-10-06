@@ -140,7 +140,8 @@ def orchestrate(
         "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
         "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
         "length_mm": float(geo_in.get("length_mm", sized["length_mm"])),
-        "channel_count": int(min(28, max(12, geo_in.get("channel_count", 24)))),
+        # Modular CEM cooling channels: 32–64 helical starts (visible outer ribs).
+        "channel_count": int(min(64, max(32, geo_in.get("channel_count", 48)))),
         "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.2)),
         "wall_mm": float(max(3.0, geo_in.get("wall_mm", 3.5))),
         "helix_turns": float(geo_in.get("helix_turns", 2.6)),
@@ -168,17 +169,37 @@ def _default_csharp(preset: str, geo: dict[str, Any]) -> str:
     length = float(geo.get("length_mm", 220))
     eps = float(geo.get("expansion_ratio", 8))
     if builder == "BuildRegenBell":
+        channels = int(min(64, max(32, geo.get("channel_count", 48))))
         return f"""
-var specs = new AeroForge.Modules.EngineSpecs {{
+using AeroForge.Modules;
+
+var specs = new EngineSpecs {{
     rThroat = {rt:0.3f}f,
     rExit = {re:0.3f}f,
     rInjector = {rt * 2.35:0.3f}f,
     length = {length:0.3f}f,
     wallMm = 3.5f,
-    expansionRatio = {eps:0.3f}f
+    expansionRatio = {eps:0.3f}f,
+    channelCount = {channels},
+    channelDepthMm = 2.5f
 }};
-// Modular CEM: Chamber + visible cooling + manifolds/ports + iso-grid
-return AeroForge.Modules.CustomEngine.GenerateMesh(specs);
+
+// 1. Build Base Chamber
+Voxels chamber = ChamberBuilder.BuildRaoBell(specs.rThroat, specs.rExit, specs.length, specs.wallMm);
+
+// 2. Add Visible Surface Cooling Channels
+Voxels channels = CoolingChannelBuilder.BuildHelical(chamber, count: specs.channelCount, depthMm: specs.channelDepthMm);
+chamber.BoolSubtract(channels);
+
+// 3. Attach Visible Distribution Manifolds & Fuel Ports
+Voxels manifolds = ManifoldBuilder.BuildToroidalRings(specs.rInjector, pipeDiameter: 18.0f, rExit: specs.rExit, length: specs.length);
+chamber.BoolAdd(manifolds);
+
+// 4. Wrap with Structural Ribs/Lattice
+Voxels latticeJacket = StructuralLatticeBuilder.BuildIsoGrid(chamber, ribThickness: 1.5f);
+chamber.BoolAdd(latticeJacket);
+
+return chamber.mshAsMesh();
 """.strip()
     return f"""
 var spec = new EngineSpec {{

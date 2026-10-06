@@ -13,13 +13,19 @@ public sealed class EngineSpecs
     public float length { get; init; } = 280f;
     public float wallMm { get; init; } = 3.5f;
     public float expansionRatio { get; init; } = 8f;
+    /// <summary>Helical cooling starts — clamped to 32–64 by CoolingChannelBuilder.</summary>
+    public int channelCount { get; init; } = 48;
+    public float channelDepthMm { get; init; } = 2.5f;
+    public float pipeDiameterMm { get; init; } = 18.0f;
+    public float ribThicknessMm { get; init; } = 1.5f;
 
     public static EngineSpecs FromGeometry(
         float throatRadiusMm,
         float exitRadiusMm,
         float lengthMm,
         float expansionRatio = 8f,
-        float wallMm = 3.5f)
+        float wallMm = 3.5f,
+        int channelCount = 48)
     {
         float rt = MathF.Max(throatRadiusMm, 12f);
         float re = MathF.Max(exitRadiusMm, rt * MathF.Sqrt(MathF.Max(expansionRatio, 4f)));
@@ -31,6 +37,7 @@ public sealed class EngineSpecs
             length = MathF.Max(lengthMm, 140f),
             wallMm = MathF.Max(wallMm, 3.0f),
             expansionRatio = MathF.Max(expansionRatio, 4f),
+            channelCount = Math.Clamp(channelCount, 32, 64),
         };
     }
 }

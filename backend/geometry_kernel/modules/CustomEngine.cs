@@ -15,6 +15,14 @@ public static class CustomEngine
     {
         float wall = MathF.Max(specs.wallMm, 3.5f);
 
+        int channelCount = Math.Clamp(specs.channelCount <= 0 ? 48 : specs.channelCount, 32, 64);
+        float channelDepth = Math.Clamp(
+            specs.channelDepthMm > 0 ? specs.channelDepthMm : 2.5f,
+            1.2f,
+            wall * 0.7f);
+        float pipeDiameter = specs.pipeDiameterMm > 0 ? specs.pipeDiameterMm : 18.0f;
+        float ribThickness = specs.ribThicknessMm > 0 ? specs.ribThicknessMm : 1.5f;
+
         // 1. Base chamber (hollow Rao bell)
         List<System.Numerics.Vector2> gas = ChamberBuilder.GetGasProfile(specs.rThroat, specs.rExit, specs.length);
         Voxels chamber = ChamberBuilder.BuildRaoBell(specs.rThroat, specs.rExit, specs.length, wall);
@@ -22,8 +30,8 @@ public static class CustomEngine
         // 2. Visible surface cooling channels (ribbed outer grooves)
         Voxels channels = CoolingChannelBuilder.BuildHelical(
             chamber,
-            count: 48,
-            depthMm: Math.Min(2.5f, wall * 0.7f),
+            count: channelCount,
+            depthMm: channelDepth,
             gasProfile: gas,
             wallMm: wall,
             helixTurns: 2.6f,
@@ -33,7 +41,7 @@ public static class CustomEngine
         // 3. Distribution manifolds & fuel ports
         Voxels manifolds = ManifoldBuilder.BuildToroidalRings(
             specs.rInjector,
-            pipeDiameter: 18.0f,
+            pipeDiameter: pipeDiameter,
             rExit: specs.rExit,
             length: specs.length,
             wallMm: wall);
@@ -42,7 +50,7 @@ public static class CustomEngine
         // 4. Structural Iso-Grid jacket
         Voxels latticeJacket = StructuralLatticeBuilder.BuildIsoGrid(
             chamber,
-            ribThickness: 1.5f,
+            ribThickness: ribThickness,
             gasProfile: gas,
             wallMm: wall);
         chamber.BoolAdd(latticeJacket);
@@ -63,7 +71,8 @@ public static class CustomEngine
             spec.ExitRadiusMm,
             spec.LengthMm,
             spec.ExpansionRatio,
-            MathF.Max(spec.WallMm, 3.5f));
+            MathF.Max(spec.WallMm, 3.5f),
+            channelCount: Math.Clamp(spec.ChannelCount <= 16 ? 48 : spec.ChannelCount, 32, 64));
         return GenerateMesh(specs);
     }
 }
