@@ -14,10 +14,10 @@ public sealed class EngineSpec
     public float ExitRadiusMm { get; init; } = 90f;
     public float LengthMm { get; init; } = 280f;
     public float ExpansionRatio { get; init; } = 8f;
-    public int ChannelCount { get; init; } = 18;
+    public int ChannelCount { get; init; } = 24;
     public float ChannelRadiusMm { get; init; } = 1.4f;
-    public float WallMm { get; init; } = 2.4f;
-    public float HelixTurns { get; init; } = 2.8f;
+    public float WallMm { get; init; } = 3.5f;
+    public float HelixTurns { get; init; } = 2.6f;
 
     public static EngineSpec FromJson(JsonElement root)
     {
@@ -41,17 +41,17 @@ public sealed class EngineSpec
             ExitRadiusMm = GetF("exit_radius_mm", 90f),
             LengthMm = GetF("length_mm", 280f),
             ExpansionRatio = GetF("expansion_ratio", 8f),
-            ChannelCount = GetI("channel_count", 18),
+            ChannelCount = GetI("channel_count", 24),
             ChannelRadiusMm = GetF("channel_radius_mm", 1.4f),
-            WallMm = GetF("wall_mm", 2.4f),
-            HelixTurns = GetF("helix_turns", 2.8f),
+            WallMm = GetF("wall_mm", 3.5f),
+            HelixTurns = GetF("helix_turns", 2.6f),
         };
     }
 }
 
 /// <summary>
-/// Production builders using LEAP 71 ShapeKernel BasePipe / LatticePipe /
-/// ControlPointSpline contours — continuous watertight engine bodies.
+/// High-level builders. Regenerative nozzles use the mandatory 6-step
+/// <see cref="EngineAssembly.VoxCreateEngine"/> pipeline.
 /// </summary>
 public static class EngineBuilders
 {
@@ -64,97 +64,13 @@ public static class EngineBuilders
         };
 
     /// <summary>
-    /// Continuous injector → chamber → throat → Rao/parabolic nozzle with
-    /// conformal helical regenerative cooling channels carved from the wall.
+    /// Multi-component regenerative chamber/nozzle: gas path, wall, manifolds,
+    /// helical cooling, injector flange — merged to one watertight mesh.
     /// </summary>
     public static Mesh BuildRegenBell(Library lib, EngineSpec spec)
     {
-        float L = MathF.Max(spec.LengthMm, 160f);
-        float rt = MathF.Max(spec.ThroatRadiusMm, 12f);
-        float re = MathF.Max(spec.ExitRadiusMm, rt * MathF.Sqrt(MathF.Max(spec.ExpansionRatio, 4f)));
-        float wall = MathF.Max(spec.WallMm, 1.8f);
-        float rc = rt * 2.35f; // chamber radius
-
-        // B-spline control points for gas-side wall radius vs length ratio.
-        // z: (injector) chamber → convergent → throat → divergent exit
-        var gasControls = new List<Vector3>
-        {
-            new(0f, rc, 0f),
-            new(0.18f, rc, 0f),
-            new(0.30f, rc * 0.92f, 0f),
-            new(0.38f, (rc + rt) * 0.55f, 0f),
-            new(0.44f, rt, 0f),                 // throat
-            new(0.52f, rt * 1.08f, 0f),
-            new(0.70f, rt + (re - rt) * 0.45f, 0f),
-            new(0.88f, rt + (re - rt) * 0.82f, 0f),
-            new(1.00f, re, 0f),
-        };
-        var gasSpline = new ControlPointSpline(gasControls, nDegree: 3);
-
-        float GasRadius(float t)
-        {
-            t = Math.Clamp(t, 0f, 1f);
-            // Sample spline at parameter t via control interpolation helper
-            var pts = gasSpline.aGetPoints(64u);
-            float idx = t * (pts.Count - 1);
-            int i0 = Math.Clamp((int)MathF.Floor(idx), 0, pts.Count - 2);
-            float u = idx - i0;
-            return pts[i0].Y * (1f - u) + pts[i0 + 1].Y * u;
-        }
-
-        var frame = new LocalFrame(new Vector3(0, 0, 0));
-        var pipe = new BasePipe(frame, L, rt * 0.5f, rt + wall);
-        pipe.SetLengthSteps(160);
-        pipe.SetPolarSteps(72);
-        pipe.SetRadialSteps(5);
-        pipe.SetRadius(
-            new SurfaceModulation(new LineModulation(t => MathF.Max(GasRadius(t) - 0.15f, 1.0f))),
-            new SurfaceModulation(new LineModulation(t => GasRadius(t) + wall))
-        );
-
-        Voxels vox = pipe.voxConstruct();
-
-        // Conformal helical cooling channels — follow outer wall mid-plane.
-        // Keep tube diameter well under wall thickness so channels stay enclosed
-        // (oversize beams punch through and look like disconnected rings).
-        int n = Math.Clamp(spec.ChannelCount, 10, 28);
-        float tubeR = Math.Min(Math.Max(spec.ChannelRadiusMm, 0.6f), wall * 0.32f);
-        var channelLattice = new Lattice();
-        for (int i = 0; i < n; i++)
-        {
-            float phase = 2f * MathF.PI * i / n;
-            Vector3? prev = null;
-            const int samples = 80;
-            for (int s = 0; s <= samples; s++)
-            {
-                float t = s / (float)samples;
-                float z = t * L;
-                float rGas = GasRadius(t);
-                float theta = phase + spec.HelixTurns * 2f * MathF.PI * t;
-                float rr = rGas + wall * 0.50f;
-                var p = new Vector3(rr * MathF.Cos(theta), rr * MathF.Sin(theta), z);
-                if (prev is Vector3 pv)
-                    channelLattice.AddBeam(pv, tubeR, p, tubeR, false);
-                prev = p;
-            }
-        }
-        vox = vox.voxBoolSubtract(new Voxels(channelLattice));
-
-        // Light outer fillet for a continuous print-ready jacket
-        try { vox.Fillet(0.6f); } catch { /* optional */ }
-
-        // Inlet manifold ring — fused to chamber OD (not floating)
-        float manR = GasRadius(0.05f) + wall * 0.50f;
-        float manBeam = Math.Min(tubeR * 1.35f, wall * 0.38f);
-        var manifold = new BaseRing(
-            new LocalFrame(new Vector3(0, 0, L * 0.04f)),
-            manR,
-            manBeam);
-        manifold.SetPolarSteps(64);
-        manifold.SetRadialSteps(40);
-        vox = vox.voxBoolAdd(manifold.voxConstruct());
-
-        return vox.mshAsMesh();
+        var p = EngineParams.FromSpec(spec);
+        return EngineAssembly.MshCreateEngine(p);
     }
 
     /// <summary>
@@ -166,9 +82,8 @@ public static class EngineBuilders
         float L = MathF.Max(spec.LengthMm, 140f);
         float rt = MathF.Max(spec.ThroatRadiusMm, 12f);
         float re = MathF.Max(spec.ExitRadiusMm, rt * 1.7f);
-        float wall = MathF.Max(spec.WallMm, 1.8f);
+        float wall = MathF.Max(spec.WallMm, 2.4f);
 
-        // Spike radius from base (re) tapering toward tip (near 0) — continuous spline.
         var plugControls = new List<Vector3>
         {
             new(0f, re, 0f),
@@ -191,7 +106,6 @@ public static class EngineBuilders
             return MathF.Max(pts[i0].Y * (1f - u) + pts[i0 + 1].Y * u, 1.2f);
         }
 
-        // Solid-ish plug as pipe with tiny inner bore for printability / cooling feed.
         var frame = new LocalFrame();
         var pipe = new BasePipe(frame, L, 0.8f, re);
         pipe.SetLengthSteps(140);

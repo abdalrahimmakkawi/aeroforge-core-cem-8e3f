@@ -134,15 +134,15 @@ def orchestrate(
 
     raw_voxel = float(geo_in.get("voxel_mm", 1.2))
     # Larger engines need coarser voxels for interactive STL size.
-    min_vox = 1.4 if thrust_kn >= 40 else 1.2
+    min_vox = 1.5 if thrust_kn >= 40 else 1.2
     voxel_mm = min(2.0, max(min_vox, raw_voxel if raw_voxel >= min_vox else min_vox))
     geometry = {
         "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
         "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
         "length_mm": float(geo_in.get("length_mm", sized["length_mm"])),
-        "channel_count": int(min(28, max(10, geo_in.get("channel_count", 18)))),
-        "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.35)),
-        "wall_mm": float(geo_in.get("wall_mm", 2.4)),
+        "channel_count": int(min(28, max(12, geo_in.get("channel_count", 24)))),
+        "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.2)),
+        "wall_mm": float(max(3.0, geo_in.get("wall_mm", 3.5))),
         "helix_turns": float(geo_in.get("helix_turns", 2.6)),
         "voxel_mm": voxel_mm,
     }
@@ -167,13 +167,30 @@ def _default_csharp(preset: str, geo: dict[str, Any]) -> str:
     re = float(geo.get("exit_radius_mm", 95))
     length = float(geo.get("length_mm", 220))
     eps = float(geo.get("expansion_ratio", 8))
+    if builder == "BuildRegenBell":
+        return f"""
+var spec = new EngineSpec {{
+    Preset = "regenerative",
+    ThroatRadiusMm = {rt:0.3f}f,
+    ExitRadiusMm = {re:0.3f}f,
+    LengthMm = {length:0.3f}f,
+    ChannelCount = 24,
+    ChannelRadiusMm = 1.2f,
+    WallMm = 3.5f,
+    HelixTurns = 2.6f,
+    ExpansionRatio = {eps:0.3f}f
+}};
+// 6-step assembly: gas path → wall → manifolds → cooling → injector → merge
+var p = EngineParams.FromSpec(spec);
+return EngineAssembly.MshCreateEngine(p);
+""".strip()
     return f"""
 var spec = new EngineSpec {{
     Preset = "{preset}",
     ThroatRadiusMm = {rt:0.3f}f,
     ExitRadiusMm = {re:0.3f}f,
     LengthMm = {length:0.3f}f,
-    ChannelCount = 18,
+    ChannelCount = 16,
     ChannelRadiusMm = 1.35f,
     WallMm = 2.4f,
     HelixTurns = 2.6f,
