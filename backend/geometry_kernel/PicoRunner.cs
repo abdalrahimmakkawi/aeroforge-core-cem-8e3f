@@ -80,6 +80,7 @@ public static class PicoRunner
             using Leap71.ShapeKernel;
             using Leap71.LatticeLibrary;
             using AeroForge.Geometry;
+            using AeroForge.Modules;
 
             namespace AeroForge.Dynamic
             {

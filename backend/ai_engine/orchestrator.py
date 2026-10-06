@@ -169,20 +169,16 @@ def _default_csharp(preset: str, geo: dict[str, Any]) -> str:
     eps = float(geo.get("expansion_ratio", 8))
     if builder == "BuildRegenBell":
         return f"""
-var spec = new EngineSpec {{
-    Preset = "regenerative",
-    ThroatRadiusMm = {rt:0.3f}f,
-    ExitRadiusMm = {re:0.3f}f,
-    LengthMm = {length:0.3f}f,
-    ChannelCount = 24,
-    ChannelRadiusMm = 1.2f,
-    WallMm = 3.5f,
-    HelixTurns = 2.6f,
-    ExpansionRatio = {eps:0.3f}f
+var specs = new AeroForge.Modules.EngineSpecs {{
+    rThroat = {rt:0.3f}f,
+    rExit = {re:0.3f}f,
+    rInjector = {rt * 2.35:0.3f}f,
+    length = {length:0.3f}f,
+    wallMm = 3.5f,
+    expansionRatio = {eps:0.3f}f
 }};
-// 6-step assembly: gas path → wall → manifolds → cooling → injector → merge
-var p = EngineParams.FromSpec(spec);
-return EngineAssembly.MshCreateEngine(p);
+// Modular CEM: Chamber + visible cooling + manifolds/ports + iso-grid
+return AeroForge.Modules.CustomEngine.GenerateMesh(specs);
 """.strip()
     return f"""
 var spec = new EngineSpec {{

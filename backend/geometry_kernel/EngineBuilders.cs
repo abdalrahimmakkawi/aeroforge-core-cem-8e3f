@@ -69,8 +69,7 @@ public static class EngineBuilders
     /// </summary>
     public static Mesh BuildRegenBell(Library lib, EngineSpec spec)
     {
-        var p = EngineParams.FromSpec(spec);
-        return EngineAssembly.MshCreateEngine(p);
+        return AeroForge.Modules.CustomEngine.GenerateFromEngineSpec(spec);
     }
 
     /// <summary>
