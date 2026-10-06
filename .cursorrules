@@ -1,0 +1,9 @@
+# NeuralOS
+
+Python propulsion MVP. Streamlit dashboard, isentropic sizing in `engine_math`, parametric solids in `cad_engine`.
+
+Keep geometry and heat transfer deterministic and labeled as preliminary (frozen-γ, Bartz, Dittus–Boelter). Do not describe the app as a trained model.
+
+STL is the printable solid with cooling passages removed, units millimeters. STEP is the CadQuery wall. The viewport is a lightweight cutaway, not the boolean mesh.
+
+Public entry points to preserve: `calculate_nozzle_parameters`, `generate_engine_stl`, `evaluate`.

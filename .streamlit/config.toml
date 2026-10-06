@@ -1,0 +1,19 @@
+[server]
+headless = true
+address = "0.0.0.0"
+port = 8742
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
+primaryColor = "#e3943f"
+backgroundColor = "#0c0e12"
+secondaryBackgroundColor = "#151922"
+textColor = "#e6ebf2"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
