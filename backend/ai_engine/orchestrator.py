@@ -135,15 +135,18 @@ def orchestrate(
 
     geo_in = ai.get("geometry") if isinstance(ai.get("geometry"), dict) else {}
     chosen_preset = str(ai.get("preset") or preset or "aerospike").lower()
+    # Clamp voxel size for interactive studio latency / browser STL size.
+    raw_voxel = float(geo_in.get("voxel_mm", 1.2))
+    voxel_mm = min(2.0, max(1.0, raw_voxel if raw_voxel >= 1.0 else 1.2))
     geometry = {
         "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
         "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
         "length_mm": float(geo_in.get("length_mm", sized["length_mm"])),
-        "channel_count": int(geo_in.get("channel_count", 16)),
+        "channel_count": int(min(24, max(8, geo_in.get("channel_count", 16)))),
         "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.35)),
         "wall_mm": float(geo_in.get("wall_mm", 2.0)),
         "helix_turns": float(geo_in.get("helix_turns", 2.2)),
-        "voxel_mm": float(geo_in.get("voxel_mm", 1.2)),
+        "voxel_mm": voxel_mm,
     }
     csharp = str(ai.get("picogk_csharp") or _default_csharp(chosen_preset))
 
