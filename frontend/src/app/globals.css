@@ -3,21 +3,53 @@
 @tailwind utilities;
 
 :root {
-  --background: #070b12;
-  --foreground: #e2e8f0;
-}
-
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-}
-
-.font-mono {
-  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --bg: #f4f1ea;
+  --bg-deep: #ebe6dc;
+  --surface: #fffcf7;
+  --surface-2: #f8f4ec;
+  --ink: #1a1814;
+  --ink-soft: #3d3933;
+  --muted: #7a746a;
+  --line: #ddd5c8;
+  --line-strong: #c9bfb0;
+  --accent: #1f4d56;
+  --accent-hover: #163a41;
+  --accent-soft: #e4eef0;
+  --danger: #8b3a2f;
+  --ok: #2f5d4a;
 }
 
 * {
+  box-sizing: border-box;
   scrollbar-width: thin;
-  scrollbar-color: #1e293b transparent;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at 12% -10%, #fffdf8 0%, transparent 55%),
+    radial-gradient(900px 500px at 100% 0%, #e8f0f1 0%, transparent 45%),
+    var(--bg);
+  font-family: var(--font-sans), "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: var(--font-display), Fraunces, Georgia, serif;
+}
+
+.font-mono {
+  font-family: var(--font-mono), "IBM Plex Mono", ui-monospace, monospace;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink);
 }

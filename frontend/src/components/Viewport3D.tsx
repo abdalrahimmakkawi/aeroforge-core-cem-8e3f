@@ -65,10 +65,10 @@ function StlMesh({
   const material = useMemo(() => {
     if (mode === "wireframe") {
       return new THREE.MeshBasicMaterial({
-        color: "#67e8f9",
+        color: "#1f4d56",
         wireframe: true,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.85,
         clippingPlanes: [clipPlane],
         clipShadows: true,
       });
@@ -76,20 +76,20 @@ function StlMesh({
     if (mode === "thermal") {
       return new THREE.MeshStandardMaterial({
         color: "#ffffff",
-        metalness: 0.15,
-        roughness: 0.4,
+        metalness: 0.12,
+        roughness: 0.45,
         vertexColors: true,
-        emissive: new THREE.Color("#7c2d12"),
-        emissiveIntensity: 0.12,
+        emissive: new THREE.Color("#5c2a1a"),
+        emissiveIntensity: 0.08,
         clippingPlanes: [clipPlane],
         clipShadows: true,
       });
     }
     return new THREE.MeshStandardMaterial({
-      color: "#94a3b8",
-      metalness: 0.85,
-      roughness: 0.28,
-      envMapIntensity: 1.1,
+      color: "#8a9096",
+      metalness: 0.78,
+      roughness: 0.32,
+      envMapIntensity: 0.95,
       side: THREE.DoubleSide,
       clippingPlanes: [clipPlane],
       clipShadows: true,
@@ -111,7 +111,7 @@ function StlMesh({
     const c = new THREE.Color();
     for (let i = 0; i < pos.count; i++) {
       const t = (pos.getY(i) - minY) / span;
-      c.setHSL(0.08 - t * 0.08, 0.95, 0.35 + t * 0.35);
+      c.setHSL(0.07 - t * 0.07, 0.72, 0.38 + t * 0.28);
       colors[i * 3] = c.r;
       colors[i * 3 + 1] = c.g;
       colors[i * 3 + 2] = c.b;
@@ -127,9 +127,9 @@ function StlMesh({
       <mesh position={[0, sliceZ, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[240, 240]} />
         <meshBasicMaterial
-          color="#22d3ee"
+          color="#1f4d56"
           transparent
-          opacity={0.08}
+          opacity={0.06}
           side={THREE.DoubleSide}
           depthWrite={false}
         />
@@ -150,13 +150,13 @@ export function Viewport3D({
   const [meshInfo, setMeshInfo] = useState<string | null>(null);
 
   return (
-    <div className="relative h-full w-full rounded-lg overflow-hidden bg-[radial-gradient(ellipse_at_center,_#132033_0%,_#070b12_70%)] border border-slate-800/80">
+    <div className="relative h-full min-h-[280px] w-full overflow-hidden rounded-md border border-[var(--line)] bg-[#f0ebe3]">
       <Canvas camera={{ position: [180, 120, 180], fov: 42, near: 0.1, far: 5000 }} dpr={[1, 1.75]}>
         <EnableClipping />
-        <color attach="background" args={["#070b12"]} />
-        <ambientLight intensity={0.45} />
-        <directionalLight position={[120, 180, 80]} intensity={1.25} castShadow />
-        <directionalLight position={[-100, 40, -60]} intensity={0.35} color="#67e8f9" />
+        <color attach="background" args={["#f0ebe3"]} />
+        <ambientLight intensity={0.72} />
+        <directionalLight position={[120, 180, 80]} intensity={1.05} castShadow />
+        <directionalLight position={[-100, 40, -60]} intensity={0.28} color="#1f4d56" />
         <Suspense fallback={null}>
           {stlUrl ? (
             <Bounds fit clip observe margin={1.25}>
@@ -166,24 +166,24 @@ export function Viewport3D({
                 sliceZ={sliceZ}
                 onMetrics={({ bbox, triangles }) =>
                   setMeshInfo(
-                    `${bbox.x.toFixed(0)}×${bbox.y.toFixed(0)}×${bbox.z.toFixed(0)} mm · ${triangles.toLocaleString()} tris`
+                    `${bbox.x.toFixed(0)} × ${bbox.y.toFixed(0)} × ${bbox.z.toFixed(0)} mm · ${triangles.toLocaleString()} tris`
                   )
                 }
               />
             </Bounds>
           ) : (
             <mesh>
-              <icosahedronGeometry args={[28, 1]} />
-              <meshStandardMaterial color="#164e63" wireframe />
+              <icosahedronGeometry args={[26, 1]} />
+              <meshStandardMaterial color="#1f4d56" wireframe transparent opacity={0.35} />
             </mesh>
           )}
-          <Environment preset="city" />
+          <Environment preset="apartment" />
         </Suspense>
         <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
-        <gridHelper args={[400, 20, "#1e293b", "#0f172a"]} position={[0, -80, 0]} />
+        <gridHelper args={[400, 20, "#c9bfb0", "#ddd5c8"]} position={[0, -80, 0]} />
       </Canvas>
-      <div className="pointer-events-none absolute bottom-2 left-2 right-2 flex justify-between text-[10px] font-mono text-slate-400">
-        <span>{stlUrl ? meshInfo || "Loading mesh…" : "Awaiting forge output"}</span>
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between gap-3 px-3 py-2 text-[11px] font-mono text-[var(--muted)] bg-gradient-to-t from-[#f0ebe3]/95 to-transparent">
+        <span>{stlUrl ? meshInfo || "Loading mesh…" : "No mesh yet — run Forge Design"}</span>
         <span>Inconel 718 · 8.19 g/cm³</span>
       </div>
     </div>

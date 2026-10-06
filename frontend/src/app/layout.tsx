@@ -1,26 +1,33 @@
 import type { Metadata } from "next";
-import { JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, Fraunces } from "next/font/google";
 import "./globals.css";
 
-const display = Space_Grotesk({
+const display = Fraunces({
   subsets: ["latin"],
   variable: "--font-display",
 });
 
-const mono = JetBrains_Mono({
+const sans = IBM_Plex_Sans({
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-sans",
+});
+
+const mono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500"],
   variable: "--font-mono",
 });
 
 export const metadata: Metadata = {
   title: "AeroForge Studio",
-  description: "AI computational propulsion workbench — NVIDIA NIM + PicoGK",
+  description: "Computational propulsion workbench — NIM geometry orchestration and PicoGK voxels",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${display.variable} ${mono.variable} antialiased font-sans`}>{children}</body>
+    <html lang="en">
+      <body className={`${display.variable} ${sans.variable} ${mono.variable} antialiased`}>{children}</body>
     </html>
   );
 }

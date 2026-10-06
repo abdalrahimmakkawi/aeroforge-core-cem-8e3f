@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Headed acceptance demo for AeroForge Studio."""
+"""Headed acceptance demo for redesigned AeroForge Studio."""
 from __future__ import annotations
 
 import sys
@@ -22,35 +22,40 @@ def main() -> int:
         )
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.goto(URL, wait_until="networkidle", timeout=60_000)
-        page.wait_for_timeout(1500)
-        page.screenshot(path=str(OUT / "aeroforge_studio_idle.png"), full_page=False)
+        page.wait_for_timeout(2000)
+        page.screenshot(path=str(OUT / "aeroforge_cream_idle.png"), full_page=False)
 
-        btn = page.get_by_role("button", name="Forge Design")
+        # Hydration: no Next error overlay
+        overlay = page.locator("#__next-build-error, [data-nextjs-dialog]")
+        if overlay.count() and overlay.first.is_visible():
+            page.screenshot(path=str(OUT / "aeroforge_hydration_error.png"), full_page=False)
+            browser.close()
+            print("FAIL:error_overlay")
+            return 1
+
+        btn = page.get_by_role("button", name="Forge design")
         btn.click()
-        page.wait_for_timeout(800)
-        page.screenshot(path=str(OUT / "aeroforge_compiling.png"), full_page=False)
+        page.wait_for_timeout(1000)
+        page.screenshot(path=str(OUT / "aeroforge_cream_compiling.png"), full_page=False)
 
-        # Wait for completion: Download button enabled or agent chat with Kernel
         deadline = time.time() + 120
         ok = False
         last_err = ""
         while time.time() < deadline:
-            # error state
-            err = page.locator("text=Error:").first
+            err = page.locator("text=Failed:").first
             if err.count() and err.is_visible():
                 last_err = err.inner_text()
-                page.screenshot(path=str(OUT / "aeroforge_error.png"), full_page=False)
+                page.screenshot(path=str(OUT / "aeroforge_cream_error.png"), full_page=False)
                 break
-            download = page.get_by_role("button", name="Download 3D-printable STL")
+            download = page.get_by_role("button", name="Download printable STL")
             if download.count() and download.is_enabled():
                 ok = True
                 break
             page.wait_for_timeout(1500)
 
-        page.screenshot(path=str(OUT / "aeroforge_after_forge.png"), full_page=False)
+        page.screenshot(path=str(OUT / "aeroforge_cream_forged.png"), full_page=False)
 
         if ok:
-            # Orbit gesture on canvas
             canvas = page.locator("canvas").first
             box = canvas.bounding_box()
             if box:
@@ -58,13 +63,25 @@ def main() -> int:
                 y = box["y"] + box["height"] * 0.45
                 page.mouse.move(x, y)
                 page.mouse.down()
-                page.mouse.move(x + 80, y + 20, steps=12)
+                page.mouse.move(x + 70, y + 15, steps=10)
                 page.mouse.up()
             page.get_by_role("button", name="wireframe").click()
-            page.wait_for_timeout(600)
+            page.wait_for_timeout(500)
             page.get_by_role("button", name="solid").click()
-            page.wait_for_timeout(600)
-            page.screenshot(path=str(OUT / "aeroforge_mesh_ready.png"), full_page=False)
+            page.wait_for_timeout(500)
+            # Exercise thermo slider
+            page.get_by_role("button", name="LOX / RP-1").click()
+            page.wait_for_timeout(300)
+            page.get_by_role("button", name="LOX / LCH₄").click()
+            page.wait_for_timeout(400)
+            page.screenshot(path=str(OUT / "aeroforge_cream_ready.png"), full_page=False)
+            download = page.get_by_role("button", name="Download printable STL")
+            with page.expect_download(timeout=30_000) as dl_info:
+                download.click()
+            dl = dl_info.value
+            path = OUT / "aeroforge_download.stl"
+            dl.save_as(str(path))
+            print(f"download_bytes={path.stat().st_size}")
 
         browser.close()
         print("OK" if ok else f"FAIL:{last_err}")
