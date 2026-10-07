@@ -81,12 +81,20 @@ def _run_kernel(payload: dict[str, Any]) -> dict[str, Any]:
         timeout=180,
     )
     dt = (time.perf_counter() - t0) * 1000.0
-    stdout = (proc.stdout or "").strip().splitlines()
-    last = stdout[-1] if stdout else "{}"
-    try:
-        result = json.loads(last)
-    except json.JSONDecodeError:
-        result = {"ok": False, "error": last or proc.stderr}
+    stdout_lines = (proc.stdout or "").strip().splitlines()
+    # PicoGK may log "Disposing Library" after earlier prints — find last JSON object.
+    result: dict[str, Any] = {"ok": False, "error": "no kernel JSON"}
+    for line in reversed(stdout_lines):
+        line = line.strip()
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                result = json.loads(line)
+                break
+            except json.JSONDecodeError:
+                continue
+    else:
+        last = stdout_lines[-1] if stdout_lines else ""
+        result = {"ok": False, "error": last or (proc.stderr or "")[-500:]}
     result["compile_ms"] = dt
     result["stderr"] = (proc.stderr or "")[-2000:]
     result["returncode"] = proc.returncode

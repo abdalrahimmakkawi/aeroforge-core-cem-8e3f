@@ -49,55 +49,59 @@ public static class Program
             // Primary path: deterministic AeroForge.Core CEM from EngineSpecs JSON.
             var specs = EngineSpecs.FromJson(root);
             specs.VoxelMm = voxelMm;
+            string preset = root.TryGetProperty("preset", out var p) ? p.GetString() ?? "regenerative" : "regenerative";
+            object? physicsSummary = null;
+            long bytes;
 
-            using var lib = new Library(voxelMm);
-            Library.RegisterGlobalLibrary(lib);
-            try
             {
-                // Legacy aerospike / swirler presets still route through EngineBuilders.
-                string preset = root.TryGetProperty("preset", out var p) ? p.GetString() ?? "regenerative" : "regenerative";
-                Mesh mesh;
-                object? physicsSummary = null;
-
-                if (preset is "aerospike" or "swirler")
+                using var lib = new Library(voxelMm);
+                Library.RegisterGlobalLibrary(lib);
+                try
                 {
-                    var legacy = EngineSpec.FromJson(root);
-                    mesh = EngineBuilders.Build(lib, legacy);
-                }
-                else
-                {
-                    var (msh, physics) = AeroForgeEngine.BuildWithPhysics(specs);
-                    mesh = msh;
-                    physicsSummary = new
+                    // Legacy aerospike / swirler presets still route through EngineBuilders.
+                    Mesh mesh;
+                    if (preset is "aerospike" or "swirler")
                     {
-                        throat_radius_mm = physics.rThroat,
-                        exit_radius_mm = physics.rExit,
-                        chamber_radius_mm = physics.rChamber,
-                        length_mm = physics.LengthMm,
-                        expansion_ratio = physics.ExpansionRatio,
-                        cf = physics.Cf,
-                        isp_s = physics.IspS,
-                        throat_area_m2 = physics.ThroatAreaM2,
-                        cooling_channels = specs.CoolingChannelCount,
-                    };
+                        var legacy = EngineSpec.FromJson(root);
+                        mesh = EngineBuilders.Build(lib, legacy);
+                    }
+                    else
+                    {
+                        var (msh, physics) = AeroForgeEngine.BuildWithPhysics(specs);
+                        mesh = msh;
+                        physicsSummary = new
+                        {
+                            throat_radius_mm = physics.rThroat,
+                            exit_radius_mm = physics.rExit,
+                            chamber_radius_mm = physics.rChamber,
+                            length_mm = physics.LengthMm,
+                            expansion_ratio = physics.ExpansionRatio,
+                            cf = physics.Cf,
+                            isp_s = physics.IspS,
+                            throat_area_m2 = physics.ThroatAreaM2,
+                            cooling_channels = specs.CoolingChannelCount,
+                        };
+                    }
+
+                    mesh.SaveToStlFile(output);
+                    bytes = new FileInfo(output).Length;
                 }
-
-                mesh.SaveToStlFile(output);
-                Console.WriteLine(JsonSerializer.Serialize(new
+                finally
                 {
-                    ok = true,
-                    mode = "core",
-                    preset,
-                    output = Path.GetFullPath(output),
-                    bytes = new FileInfo(output).Length,
-                    physics = physicsSummary,
-                }));
-            }
-            finally
-            {
-                Library.UnregisterGlobalLibrary();
-            }
+                    Library.UnregisterGlobalLibrary();
+                }
+            } // Library disposed here (may log to stdout)
 
+            // Emit result JSON LAST so Python API parsers see it as the final line.
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                ok = true,
+                mode = "core",
+                preset,
+                output = Path.GetFullPath(output),
+                bytes,
+                physics = physicsSummary,
+            }));
             return 0;
         }
         catch (Exception ex)
