@@ -26,4 +26,8 @@ public static class ChamberBuilder
         voxOuterShell.BoolSubtract(voxInnerGasPath);
         return voxOuterShell;
     }
+
+    /// <summary>Flight-grade alias — hollow structural shell only (gas path subtracted).</summary>
+    public static Voxels BuildHollowShell(List<Vector2> contour, float wallThickness = 3.2f) =>
+        BuildHollowWall(contour, wallThickness);
 }

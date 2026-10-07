@@ -133,8 +133,10 @@ def orchestrate(
     model_used = _model()
     ai: dict[str, Any] = {}
     reasoning = (
-        "Sized via AeroForge.Core GasDynamics + RaoContour from thrust/Pc sliders; "
-        "assembled by ChamberBuilder → CoolingBuilder → ManifoldBuilder → InjectorBuilder."
+        "Flight-grade AeroForge.Core synthesis (deterministic, not LLM geometry): "
+        "GasDynamics + RaoContour → ChamberBuilder shell → VariableAspectCoolingBuilder "
+        "(teardrop channels) → ManifoldPlumbingBuilder → InjectorHeadBuilder (coax swirlers) "
+        "→ IsogridStiffenerBuilder."
     )
 
     # Core path: skip NIM by default. Optional enrichment with a hard wall-clock timeout.
@@ -177,14 +179,19 @@ def orchestrate(
     voxel_mm = min(2.0, max(voxel_mm, raw_voxel if raw_voxel >= voxel_mm else voxel_mm))
 
     channel_count = int(
-        specs_in.get("CoolingChannelCount", geo_in.get("channel_count", 48))
+        specs_in.get("CoolingChannelCount", geo_in.get("channel_count", 72))
     )
-    channel_count = min(64, max(32, channel_count))
-    wall_mm = float(specs_in.get("WallThicknessMm", geo_in.get("wall_mm", 3.5)))
+    # Flight-grade conformal cooling: 64–128 channels.
+    if channel_count < 64:
+        channel_count = 72
+    channel_count = min(128, max(64, channel_count))
+    wall_mm = float(specs_in.get("WallThicknessMm", geo_in.get("wall_mm", 3.2)))
     wall_mm = max(3.0, min(wall_mm, 6.0))
-    helix = float(specs_in.get("HelixTurns", geo_in.get("helix_turns", 2.6)))
+    helix = float(specs_in.get("HelixTurns", geo_in.get("helix_turns", 2.8)))
     depth = float(specs_in.get("ChannelDepthMm", 2.5))
     pipe_d = float(specs_in.get("PipeDiameterMm", 18.0))
+    injector_n = int(specs_in.get("InjectorElementCount", 36))
+    injector_n = min(48, max(18, injector_n))
 
     engine_specs = {
         "ThrustkN": float(specs_in.get("ThrustkN", thrust_kn)),
@@ -196,6 +203,7 @@ def orchestrate(
         "ChannelDepthMm": depth,
         "HelixTurns": helix,
         "PipeDiameterMm": pipe_d,
+        "InjectorElementCount": injector_n,
         "AmbientPressurePa": ambient_pressure_pa,
         "Gamma": float(sized.get("gamma", 1.20)),
         "VoxelMm": voxel_mm,
@@ -207,6 +215,7 @@ def orchestrate(
         "length_mm": float(geo_in.get("length_mm", min(300.0, sized["length_mm"]))),
         "channel_count": channel_count,
         "channel_radius_mm": float(geo_in.get("channel_radius_mm", depth * 0.5)),
+        "injector_elements": injector_n,
         "wall_mm": wall_mm,
         "helix_turns": helix,
         "voxel_mm": voxel_mm,
@@ -224,7 +233,8 @@ def orchestrate(
 
 
 def _display_csharp(specs: dict[str, Any]) -> str:
-    return f"""// AeroForge.Core — deterministic CEM (no LLM geometry)
+    inj = int(specs.get("InjectorElementCount", 36))
+    return f"""// AeroForge.Core — flight-grade multi-component CEM (no LLM geometry)
 using AeroForge.Core;
 using AeroForge.Core.Physics;
 using AeroForge.Core.Modules;
@@ -234,16 +244,17 @@ var specs = new EngineSpecs {{
     ChamberPressureBar = {float(specs['ChamberPressureBar']):0.1f}f,
     CoolingChannelCount = {int(specs['CoolingChannelCount'])},
     WallThicknessMm = {float(specs['WallThicknessMm']):0.1f}f,
-    ChannelDepthMm = {float(specs['ChannelDepthMm']):0.1f}f,
     HelixTurns = {float(specs['HelixTurns']):0.1f}f,
-    PipeDiameterMm = {float(specs['PipeDiameterMm']):0.1f}f
+    PipeDiameterMm = {float(specs['PipeDiameterMm']):0.1f}f,
+    InjectorElementCount = {inj}
 }};
 
-// 1. GasDynamics.Calculate → A_t, r_t, ε, L*
-// 2. RaoContour.GetEngineProfile → parabolic bell
-// 3. ChamberBuilder.BuildHollowWall → hollow jacket
-// 4. CoolingBuilder.BuildConformalChannels → BoolSubtract
-// 5. ManifoldBuilder.BuildRings → BoolAdd
-// 6. InjectorBuilder.BuildFlange → BoolAdd
-return AeroForgeEngine.BuildMesh(specs);
+// BuildFlightGradeEngine:
+// 1. GasDynamics + RaoContour.GetProfile
+// 2. ChamberBuilder.BuildHollowShell
+// 3. VariableAspectCoolingBuilder.GeneratePassages → BoolSubtract
+// 4. ManifoldPlumbingBuilder.GenerateRingsAndPorts → BoolAdd
+// 5. InjectorHeadBuilder.GenerateHead (36 coax swirlers) → BoolAdd
+// 6. IsogridStiffenerBuilder.GenerateGrid → BoolAdd
+return AeroForgeEngine.BuildFlightGradeEngine(specs).mshAsMesh();
 """.strip()

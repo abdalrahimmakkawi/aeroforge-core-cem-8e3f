@@ -34,14 +34,15 @@ cp .env.example .env   # set NVIDIA_API_KEY (+ optional NVIDIA_MODEL)
 frontend/                              Next.js App Router studio UI
 backend/ai_engine/                     FastAPI + NIM → EngineSpecs JSON only
 backend/geometry_kernel/
-  AeroForge.Core/                      Deterministic CEM (engine compiler)
+  AeroForge.Core/                      Flight-grade multi-component CEM
     Physics/GasDynamics.cs             A_t, r_t, ε, L*, Isp
     Physics/RaoContour.cs              Parabolic bell (Z,R) profile
-    Modules/ChamberBuilder.cs          Hollow revolved wall
-    Modules/CoolingBuilder.cs          32–64 helical conformal channels
-    Modules/ManifoldBuilder.cs         Toroids + pipe stubs + AN/NPT ports
-    Modules/InjectorBuilder.cs         Injector flange / showerhead
-    AeroForgeEngine.cs                 Master pipeline orchestrator
+    Modules/ChamberBuilder.cs          Hollow structural shell
+    Modules/VariableAspectCoolingBuilder.cs  64–128 teardrop conformal channels
+    Modules/ManifoldPlumbingBuilder.cs Toroids + 45° AN/NPT feeds + sensors
+    Modules/InjectorHeadBuilder.cs     Coax swirlers + film cooling + flange
+    Modules/IsogridStiffenerBuilder.cs Triangular outer thrust ribs
+    AeroForgeEngine.cs                 BuildFlightGradeEngine orchestrator
   PicoRunner.cs                        Legacy Roslyn path (optional)
 scripts/dev.sh                         Single-command local startup
 ```

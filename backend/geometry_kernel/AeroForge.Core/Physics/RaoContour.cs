@@ -8,6 +8,10 @@ namespace AeroForge.Core.Physics;
 /// </summary>
 public static class RaoContour
 {
+    /// <summary>Flight-grade alias for <see cref="GetEngineProfile"/>.</summary>
+    public static List<Vector2> GetProfile(GasDynamicsResult physics, int samples = 96) =>
+        GetEngineProfile(physics, samples);
+
     /// <summary>
     /// Dense gas-side profile spanning injector face to nozzle exit.
     /// Vector2.X = axial Z (mm), Vector2.Y = radius (mm).

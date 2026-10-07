@@ -13,11 +13,12 @@ public sealed class EngineSpecs
 {
     public float ThrustkN { get; set; } = 50.0f;
     public float ChamberPressureBar { get; set; } = 60.0f;
-    public int CoolingChannelCount { get; set; } = 48;
-    public float WallThicknessMm { get; set; } = 3.5f;
+    public int CoolingChannelCount { get; set; } = 72;
+    public float WallThicknessMm { get; set; } = 3.2f;
     public float ChannelDepthMm { get; set; } = 2.5f;
-    public float HelixTurns { get; set; } = 2.6f;
+    public float HelixTurns { get; set; } = 2.8f;
     public float PipeDiameterMm { get; set; } = 18.0f;
+    public int InjectorElementCount { get; set; } = 36;
     public float AmbientPressurePa { get; set; } = 101325f;
     public float Gamma { get; set; } = 1.20f;
     public float VoxelMm { get; set; } = 1.5f;
@@ -41,13 +42,11 @@ public sealed class EngineSpecs
             return d;
         }
 
-        // Prefer nested engine_specs object when present.
         JsonElement src = root;
         if (root.TryGetProperty("engine_specs", out var nested) && nested.ValueKind == JsonValueKind.Object)
             src = nested;
 
         float thrust = GetF("ThrustkN", "thrust_kn", 50f);
-        // Accept MPa from UI and convert, or bar directly.
         float bar = 60f;
         if (src.TryGetProperty("ChamberPressureBar", out var cpb) && cpb.ValueKind == JsonValueKind.Number)
             bar = cpb.GetSingle();
@@ -61,15 +60,20 @@ public sealed class EngineSpecs
         if (root.TryGetProperty("thrust_kn", out var tk) && tk.ValueKind == JsonValueKind.Number)
             thrust = tk.GetSingle();
 
+        int channels = GetI("CoolingChannelCount", "channel_count", 72);
+        // Flight-grade cooling band is 64–128; lift legacy 32–48 requests into band.
+        if (channels < 64) channels = 72;
+
         return new EngineSpecs
         {
             ThrustkN = Math.Clamp(thrust, 5f, 100f),
             ChamberPressureBar = Math.Clamp(bar, 10f, 150f),
-            CoolingChannelCount = Math.Clamp(GetI("CoolingChannelCount", "channel_count", 48), 32, 64),
-            WallThicknessMm = Math.Clamp(GetF("WallThicknessMm", "wall_mm", 3.5f), 3.0f, 8f),
+            CoolingChannelCount = Math.Clamp(channels, 64, 128),
+            WallThicknessMm = Math.Clamp(GetF("WallThicknessMm", "wall_mm", 3.2f), 3.0f, 8f),
             ChannelDepthMm = Math.Clamp(GetF("ChannelDepthMm", "channel_depth_mm", 2.5f), 1.2f, 4f),
-            HelixTurns = Math.Clamp(GetF("HelixTurns", "helix_turns", 2.6f), 1.8f, 4f),
+            HelixTurns = Math.Clamp(GetF("HelixTurns", "helix_turns", 2.8f), 1.8f, 4f),
             PipeDiameterMm = Math.Clamp(GetF("PipeDiameterMm", "pipe_diameter_mm", 18f), 10f, 28f),
+            InjectorElementCount = Math.Clamp(GetI("InjectorElementCount", "injector_elements", 36), 18, 48),
             AmbientPressurePa = GetF("AmbientPressurePa", "ambient_pressure_pa", 101325f),
             Gamma = GetF("Gamma", "gamma", 1.20f),
             VoxelMm = Math.Clamp(GetF("VoxelMm", "voxel_mm", 1.5f), 0.8f, 2.0f),
@@ -78,54 +82,61 @@ public sealed class EngineSpecs
 }
 
 /// <summary>
-/// Master CEM pipeline — thermodynamics → Rao contour → hollow wall → cooling → manifolds → injector.
+/// Master flight-grade CEM — multi-component monolithic voxel assembly.
+/// Not a single revolved solid: every feature is a fluid path, thermal boundary, or load path.
 /// </summary>
 public static class AeroForgeEngine
 {
-    public static Voxels Build(EngineSpecs specs)
+    /// <summary>Primary entry — flight-grade multi-physics synthesis.</summary>
+    public static Voxels Build(EngineSpecs specs) => BuildFlightGradeEngine(specs);
+
+    public static Voxels BuildFlightGradeEngine(EngineSpecs specs)
     {
-        // 1. First-principles gas dynamics
+        float wall = MathF.Max(specs.WallThicknessMm, 3.2f);
+        int channels = Math.Clamp(specs.CoolingChannelCount <= 0 ? 72 : specs.CoolingChannelCount, 64, 128);
+        int elements = Math.Clamp(specs.InjectorElementCount <= 0 ? 36 : specs.InjectorElementCount, 18, 48);
+
+        // 1. Thermodynamics & Rao contour
         var physics = GasDynamics.Calculate(
             specs.ThrustkN,
             specs.ChamberPressureBar,
             specs.AmbientPressurePa,
             specs.Gamma);
+        List<Vector2> contour = RaoContour.GetProfile(physics);
 
-        // 2. Parabolic Rao curve
-        List<Vector2> profile = RaoContour.GetEngineProfile(physics);
+        // 2. Hollow chamber wall shell
+        Voxels voxChamber = ChamberBuilder.BuildHollowShell(contour, wallThickness: wall);
 
-        // 3. Hollow chamber wall
-        Voxels voxChamber = ChamberBuilder.BuildHollowWall(profile, specs.WallThicknessMm);
+        // 3. Variable high-aspect conformal cooling (teardrop, AM self-supporting)
+        Voxels voxCoolingPassages = VariableAspectCoolingBuilder.GeneratePassages(
+            contour,
+            channelCount: channels,
+            teardropProfile: true,
+            wallMm: wall,
+            helixTurns: specs.HelixTurns);
+        voxChamber.BoolSubtract(voxCoolingPassages);
 
-        // 4. Conformal cooling channels (visible ribbed outer grooves)
-        Voxels voxChannels = CoolingBuilder.BuildConformalChannels(
-            profile,
-            channelCount: specs.CoolingChannelCount,
-            depthMm: specs.ChannelDepthMm,
-            pitch: specs.HelixTurns,
-            wallMm: specs.WallThicknessMm);
-        voxChamber.BoolSubtract(voxChannels);
-
-        // 5. Toroidal manifolds & pipe ports
-        Voxels voxManifolds = ManifoldBuilder.BuildRings(
-            physics.rInjector,
-            physics.rExit,
-            lengthMm: physics.LengthMm,
-            wallMm: specs.WallThicknessMm,
+        // 4. Toroidal manifolds & plumbing stubs
+        Voxels voxManifolds = ManifoldPlumbingBuilder.GenerateRingsAndPorts(
+            physics,
+            wallMm: wall,
             pipeDiameterMm: specs.PipeDiameterMm);
         voxChamber.BoolAdd(voxManifolds);
 
-        // 6. Injector cap
-        Voxels voxCap = InjectorBuilder.BuildFlange(physics.rInjector);
-        voxChamber.BoolAdd(voxCap);
+        // 5. Co-axial swirler injector head
+        Voxels voxInjector = InjectorHeadBuilder.GenerateHead(physics, elementCount: elements);
+        voxChamber.BoolAdd(voxInjector);
 
-        try { voxChamber.Fillet(0.4f); } catch { /* optional */ }
+        // 6. Outer structural iso-grid stiffeners
+        Voxels voxStructuralRibs = IsogridStiffenerBuilder.GenerateGrid(contour, wallMm: wall);
+        voxChamber.BoolAdd(voxStructuralRibs);
+
+        try { voxChamber.Fillet(0.35f); } catch { /* optional */ }
         return voxChamber;
     }
 
-    public static Mesh BuildMesh(EngineSpecs specs) => Build(specs).mshAsMesh();
+    public static Mesh BuildMesh(EngineSpecs specs) => BuildFlightGradeEngine(specs).mshAsMesh();
 
-    /// <summary>Run Core pipeline and return physics used (for API metrics).</summary>
     public static (Mesh mesh, GasDynamicsResult physics) BuildWithPhysics(EngineSpecs specs)
     {
         var physics = GasDynamics.Calculate(
@@ -133,14 +144,6 @@ public static class AeroForgeEngine
             specs.ChamberPressureBar,
             specs.AmbientPressurePa,
             specs.Gamma);
-        List<Vector2> profile = RaoContour.GetEngineProfile(physics);
-        Voxels vox = ChamberBuilder.BuildHollowWall(profile, specs.WallThicknessMm);
-        vox.BoolSubtract(CoolingBuilder.BuildConformalChannels(
-            profile, specs.CoolingChannelCount, specs.ChannelDepthMm, specs.HelixTurns, specs.WallThicknessMm));
-        vox.BoolAdd(ManifoldBuilder.BuildRings(
-            physics.rInjector, physics.rExit, physics.LengthMm, specs.WallThicknessMm, specs.PipeDiameterMm));
-        vox.BoolAdd(InjectorBuilder.BuildFlange(physics.rInjector));
-        try { vox.Fillet(0.4f); } catch { /* optional */ }
-        return (vox.mshAsMesh(), physics);
+        return (BuildFlightGradeEngine(specs).mshAsMesh(), physics);
     }
 }
