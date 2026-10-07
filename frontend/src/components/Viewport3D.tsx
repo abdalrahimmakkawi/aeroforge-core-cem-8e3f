@@ -21,25 +21,35 @@ function StlMesh({
   mode,
   sliceZ,
   onMetrics,
+  onStatus,
 }: {
   url: string;
   mode: ViewMode;
   sliceZ: number;
   onMetrics?: (m: { bbox: THREE.Vector3; triangles: number }) => void;
+  onStatus?: (s: string) => void;
 }) {
   const [geom, setGeom] = useState<THREE.BufferGeometry | null>(null);
 
   useEffect(() => {
     let alive = true;
+    let loaded: THREE.BufferGeometry | null = null;
     const loader = new STLLoader();
+    onStatus?.("Downloading mesh…");
+
     loader.load(
       url,
       (g) => {
-        if (!alive) return;
+        if (!alive) {
+          g.dispose();
+          return;
+        }
+        onStatus?.("Building GPU mesh…");
         g.computeVertexNormals();
         g.computeBoundingBox();
         g.center();
         g.computeBoundingBox();
+        loaded = g;
         setGeom(g);
         if (onMetrics && g.boundingBox) {
           const size = new THREE.Vector3();
@@ -48,17 +58,27 @@ function StlMesh({
           const tris = idx ? idx.count / 3 : g.attributes.position.count / 3;
           onMetrics({ bbox: size, triangles: Math.round(tris) });
         }
+        onStatus?.("");
       },
-      undefined,
-      () => alive && setGeom(null)
+      (ev) => {
+        if (!alive || !ev.lengthComputable) return;
+        const pct = Math.round((100 * ev.loaded) / Math.max(ev.total, 1));
+        onStatus?.(`Downloading mesh… ${pct}%`);
+      },
+      (err) => {
+        if (!alive) return;
+        console.error("STL load failed", err);
+        setGeom(null);
+        onStatus?.("Mesh load failed — retry Forge design");
+      }
     );
     return () => {
       alive = false;
+      loaded?.dispose();
     };
-  }, [url, onMetrics]);
+  }, [url, onMetrics, onStatus]);
 
   const clipPlane = useMemo(() => {
-    // Park the plane outside the mesh when the slider is near either end.
     if (Math.abs(sliceZ) >= 78) return null;
     return new THREE.Plane(new THREE.Vector3(0, -1, 0), sliceZ);
   }, [sliceZ]);
@@ -152,10 +172,16 @@ export function Viewport3D({
   sliceZ: number;
 }) {
   const [meshInfo, setMeshInfo] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMeshInfo(null);
+    setStatus(stlUrl ? "Loading mesh…" : null);
+  }, [stlUrl]);
 
   return (
     <div className="relative h-full min-h-[280px] w-full overflow-hidden rounded-md border border-[var(--line)] bg-[#f0ebe3]">
-      <Canvas camera={{ position: [180, 120, 180], fov: 42, near: 0.1, far: 5000 }} dpr={[1, 1.75]}>
+      <Canvas camera={{ position: [180, 120, 180], fov: 42, near: 0.1, far: 5000 }} dpr={[1, 1.5]}>
         <EnableClipping />
         <color attach="background" args={["#f0ebe3"]} />
         <ambientLight intensity={0.72} />
@@ -173,6 +199,7 @@ export function Viewport3D({
                     `${bbox.x.toFixed(0)} × ${bbox.y.toFixed(0)} × ${bbox.z.toFixed(0)} mm · ${triangles.toLocaleString()} tris`
                   )
                 }
+                onStatus={(s) => setStatus(s || null)}
               />
             </Bounds>
           ) : (
@@ -187,7 +214,9 @@ export function Viewport3D({
         <gridHelper args={[400, 20, "#c9bfb0", "#ddd5c8"]} position={[0, -80, 0]} />
       </Canvas>
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-between gap-3 px-3 py-2 text-[11px] font-mono text-[var(--muted)] bg-gradient-to-t from-[#f0ebe3]/95 to-transparent">
-        <span>{stlUrl ? meshInfo || "Loading mesh…" : "No mesh yet — run Forge Design"}</span>
+        <span>
+          {stlUrl ? meshInfo || status || "Loading mesh…" : "No mesh yet — run Forge Design"}
+        </span>
         <span>Inconel 718 · 8.19 g/cm³</span>
       </div>
     </div>

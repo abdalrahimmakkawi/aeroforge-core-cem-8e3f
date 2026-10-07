@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Box,
   Download,
@@ -15,6 +15,9 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Viewport3D, type ViewMode } from "@/components/Viewport3D";
 import { API_BASE, cn } from "@/lib/utils";
+
+/** Browser/proxy often dies around 60s; Core forges should finish well under this. */
+const DESIGN_TIMEOUT_MS = 120_000;
 
 type ChatItem = { role: "user" | "agent" | "system"; text: string };
 
@@ -57,33 +60,52 @@ function fmt(n: number | string | undefined, digits = 2): string {
 
 export default function Studio() {
   const [prompt, setPrompt] = useState(
-    "Design a 20 kN MethaLOX aerospike with internal spiral cooling channels"
+    "Design a 50 kN MethaLOX rocket engine nozzle with integrated regenerative cooling channels."
   );
-  const [thrust, setThrust] = useState(20);
-  const [pc, setPc] = useState(3.5);
+  const [thrust, setThrust] = useState(50);
+  const [pc, setPc] = useState(6.0);
   const [propellant, setPropellant] = useState<(typeof FUELS)[number]["id"]>("lox_methane");
-  const [preset, setPreset] = useState<(typeof PRESETS)[number]["id"]>("aerospike");
+  const [preset, setPreset] = useState<(typeof PRESETS)[number]["id"]>("regenerative");
   const [viewMode, setViewMode] = useState<ViewMode>("solid");
   const [sliceZ, setSliceZ] = useState(80);
   const [busy, setBusy] = useState(false);
+  const [busyElapsed, setBusyElapsed] = useState(0);
   const [chat, setChat] = useState<ChatItem[]>([
     {
       role: "system",
-      text: "Workbench ready. NVIDIA NIM sizes the engine; PicoGK compiles a printable STL.",
+      text: "Workbench ready. AeroForge.Core compiles a printable STL from thrust/Pc (deterministic CEM).",
     },
   ]);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const stlUrl = useMemo(() => {
     if (!result?.stl_url) return null;
     return `${API_BASE}${result.stl_url}?v=${result.job_id}`;
   }, [result]);
 
+  useEffect(() => {
+    if (!busy) {
+      setBusyElapsed(0);
+      return;
+    }
+    const t0 = Date.now();
+    const id = window.setInterval(() => setBusyElapsed(Math.round((Date.now() - t0) / 1000)), 250);
+    return () => window.clearInterval(id);
+  }, [busy]);
+
   async function runDesign() {
+    if (busy) return;
+    abortRef.current?.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+    const timer = window.setTimeout(() => ac.abort(), DESIGN_TIMEOUT_MS);
+
     setBusy(true);
     setError(null);
+    setResult(null);
     setChat((c) => [...c, { role: "user", text: prompt }]);
     requestAnimationFrame(() => {
       logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
@@ -92,6 +114,7 @@ export default function Studio() {
       const res = await fetch(`${API_BASE}/api/design`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ac.signal,
         body: JSON.stringify({
           prompt,
           thrust_kn: thrust,
@@ -106,7 +129,7 @@ export default function Studio() {
       try {
         data = JSON.parse(raw);
       } catch {
-        throw new Error(raw.slice(0, 220) || res.statusText);
+        throw new Error(raw.slice(0, 220) || res.statusText || "Invalid JSON from design API");
       }
       if (!res.ok) {
         const detail = data?.detail;
@@ -116,24 +139,32 @@ export default function Studio() {
             : detail && typeof detail === "object" && "message" in detail
               ? String((detail as { message: string }).message)
               : res.statusText;
-        throw new Error(msg);
+        throw new Error(msg || `Design failed (${res.status})`);
       }
       setResult(data);
+      const kb = (data.metrics?.stl_bytes ?? 0) / 1024;
       setChat((c) => [
         ...c,
         {
           role: "agent",
-          text: `${data.reasoning}\n\nKernel ${data.kernel_mode} · ${Math.round(data.compile_ms)} ms · ${(data.metrics.stl_bytes / 1024).toFixed(0)} KB`,
+          text: `${data.reasoning}\n\nKernel ${data.kernel_mode} · ${Math.round(data.compile_ms)} ms · ${kb.toFixed(0)} KB`,
         },
       ]);
       requestAnimationFrame(() => {
         logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
       });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      let msg = e instanceof Error ? e.message : String(e);
+      if (e instanceof DOMException && e.name === "AbortError") {
+        msg = `Design timed out after ${DESIGN_TIMEOUT_MS / 1000}s. Try again — Core forges usually finish in a few seconds.`;
+      } else if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+        msg =
+          "Failed to reach the design API (network/proxy). The previous hang was usually a 60s NIM wait — Core now skips that. Retry Forge design.";
+      }
       setError(msg);
       setChat((c) => [...c, { role: "system", text: `Failed: ${msg}` }]);
     } finally {
+      window.clearTimeout(timer);
       setBusy(false);
     }
   }
@@ -218,7 +249,7 @@ export default function Studio() {
               </label>
               <Button onClick={runDesign} disabled={busy || !prompt.trim()} className="h-11 w-full">
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Box className="h-4 w-4" />}
-                {busy ? "Compiling voxels…" : "Forge design"}
+                {busy ? `Compiling voxels… ${busyElapsed}s` : "Forge design"}
               </Button>
               {error && <p className="text-xs text-[var(--danger)]">{error}</p>}
             </div>

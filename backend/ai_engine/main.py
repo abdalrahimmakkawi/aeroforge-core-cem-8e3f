@@ -118,6 +118,8 @@ def propellants() -> dict[str, Any]:
 
 @app.post("/api/design", response_model=DesignResponse)
 def design(req: DesignRequest) -> DesignResponse:
+    # Skip blocking NIM by default — UI sliders + thermo size EngineSpecs.
+    # use_ai_script=True opts into a short NIM enrichment pass (hard-timed out).
     plan = orchestrator.orchestrate(
         req.prompt,
         thrust_kn=req.thrust_kn,
@@ -125,6 +127,7 @@ def design(req: DesignRequest) -> DesignResponse:
         propellant=req.propellant,
         preset=req.preset,
         ambient_pressure_pa=req.ambient_pressure_pa,
+        skip_llm=not req.use_ai_script,
     )
     job_id = uuid.uuid4().hex[:12]
     stl_name = f"engine_{job_id}.stl"

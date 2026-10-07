@@ -69,14 +69,17 @@ public static class GasDynamics
         float rt = rtM * 1000f;
         float re = reM * 1000f;
         float rc = rt * 2.35f;
-        float lStar = Math.Clamp(lStarMm, 500f, 1500f);
+        // Compact L* keeps interactive STLs printable (full-scale L* blows voxel budgets).
+        float lStar = Math.Clamp(lStarMm, 400f, 800f);
         // V_c = L* · A_t  (mm³)
         float vc = lStar * (at * 1e9f);
         // Length: chamber cylinder + convergent + ~80% Rao bell of 15° cone
         float Lconv = (rc - rt) / MathF.Tan(30f * MathF.PI / 180f);
         float Lbell = 0.80f * (re - rt) / MathF.Tan(15f * MathF.PI / 180f);
-        float Lcyl = MathF.Max(vc / (MathF.PI * rc * rc) - 0.5f * Lconv, rt * 1.8f);
-        float length = Math.Clamp(Lcyl + Lconv + Lbell, 140f, 520f);
+        float LcylRaw = vc / (MathF.PI * rc * rc) - 0.5f * Lconv;
+        float Lcyl = Math.Clamp(LcylRaw, rt * 1.6f, rt * 3.8f);
+        // Cap overall length so 50 kN forges stay under ~10–15 MB STL at 1.5–2.0 mm voxels.
+        float length = Math.Clamp(Lcyl + Lconv + Lbell, 140f, 300f);
 
         float mdot = Pc * at / cStar;
         float isp = F / (mdot * G0);

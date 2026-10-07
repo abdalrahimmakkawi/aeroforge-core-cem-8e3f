@@ -35,12 +35,12 @@ public static class CoolingBuilder
         float halfD = depthMm * 0.48f;
 
         var lat = new Lattice();
-        const int samples = 100;
+        // Fewer axial samples → faster voxels + smaller STL (still visually helical).
+        int samples = channelCount >= 48 ? 56 : 72;
         for (int i = 0; i < channelCount; i++)
         {
             float phase = 2f * MathF.PI * i / channelCount;
-            Vector3? prevA = null;
-            Vector3? prevB = null;
+            Vector3? prev = null;
             for (int s = 0; s <= samples; s++)
             {
                 float t = s / (float)samples;
@@ -48,21 +48,14 @@ public static class CoolingBuilder
                 float rOuter = RaoContour.RadiusAtZ(outer, z);
                 float rCenter = rOuter - halfD;
                 float theta = phase + pitch * 2f * MathF.PI * t;
+                var p = new Vector3(rCenter * MathF.Cos(theta), rCenter * MathF.Sin(theta), z);
 
-                float tx = -MathF.Sin(theta);
-                float ty = MathF.Cos(theta);
-                var center = new Vector3(rCenter * MathF.Cos(theta), rCenter * MathF.Sin(theta), z);
-                var a = center + new Vector3(tx, ty, 0) * (halfW * 0.55f);
-                var b = center - new Vector3(tx, ty, 0) * (halfW * 0.55f);
-
-                if (prevA is Vector3 pa)
+                if (prev is Vector3 pv)
                 {
-                    lat.AddBeam(pa, halfD, a, halfD, false);
-                    lat.AddBeam(prevB!.Value, halfD, b, halfD, false);
-                    lat.AddBeam(pa, halfD * 0.85f, b, halfD * 0.85f, false);
+                    // Single beam per step ≈ rectangular channel when radius ≈ half-depth.
+                    lat.AddBeam(pv, halfD, p, halfD, false);
                 }
-                prevA = a;
-                prevB = b;
+                prev = p;
             }
         }
 
