@@ -125,9 +125,13 @@ def design(req: DesignRequest) -> DesignResponse:
     stable = OUTPUT_DIR / "engine_output.stl"
 
     geo = plan["geometry"]
+    engine_specs = plan.get("engine_specs") if isinstance(plan.get("engine_specs"), dict) else {}
+    # Primary path: deterministic AeroForge.Core CEM from EngineSpecs JSON.
+    # Legacy Roslyn script mode only when explicitly requested AND preset needs it.
+    use_core = plan["preset"] == "regenerative" or not req.use_ai_script
     payload: dict[str, Any] = {
         "job_id": job_id,
-        "mode": "script" if req.use_ai_script else "builder",
+        "mode": "core" if use_core else ("script" if req.use_ai_script else "core"),
         "preset": plan["preset"],
         "thrust_kn": req.thrust_kn,
         "chamber_pressure_mpa": req.chamber_pressure_mpa,
@@ -142,17 +146,28 @@ def design(req: DesignRequest) -> DesignResponse:
         "voxel_mm": geo["voxel_mm"],
         "output": str(stl_path),
         "csharp": plan["picogk_csharp"],
+        "engine_specs": engine_specs,
+        # Flat EngineSpecs fields for AeroForge.Core.EngineSpecs.FromJson
+        "ThrustkN": engine_specs.get("ThrustkN", req.thrust_kn),
+        "ChamberPressureBar": engine_specs.get(
+            "ChamberPressureBar", req.chamber_pressure_mpa * 10.0
+        ),
+        "CoolingChannelCount": engine_specs.get("CoolingChannelCount", geo["channel_count"]),
+        "WallThicknessMm": engine_specs.get("WallThicknessMm", geo["wall_mm"]),
+        "ChannelDepthMm": engine_specs.get("ChannelDepthMm", 2.5),
+        "HelixTurns": engine_specs.get("HelixTurns", geo["helix_turns"]),
+        "PipeDiameterMm": engine_specs.get("PipeDiameterMm", 18.0),
+        "AmbientPressurePa": req.ambient_pressure_pa,
     }
 
-    kernel_mode = "builder"
+    kernel_mode = "core"
     result = _run_kernel(payload)
-    if not result.get("ok") and req.use_ai_script:
-        # Fall back to deterministic creative builder if AI script fails Roslyn/PicoGK.
-        payload["mode"] = "builder"
-        kernel_mode = "builder_fallback"
+    if not result.get("ok") and payload.get("mode") == "script":
+        payload["mode"] = "core"
+        kernel_mode = "core_fallback"
         result = _run_kernel(payload)
     elif result.get("ok"):
-        kernel_mode = payload["mode"]
+        kernel_mode = str(result.get("mode") or payload["mode"])
 
     if not result.get("ok") or not stl_path.exists():
         raise HTTPException(

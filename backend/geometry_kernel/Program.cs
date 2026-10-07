@@ -1,13 +1,14 @@
 ﻿using System.Text.Json;
+using AeroForge.Core;
 using PicoGK;
 
 namespace AeroForge.Geometry;
 
 /// <summary>
-/// CLI entry: reads a JSON payload, builds voxels with PicoGK + ShapeKernel, writes STL.
+/// CLI entry: reads EngineSpecs JSON, runs deterministic AeroForge.Core CEM, writes STL.
 /// Modes:
-///   {"mode":"builder","preset":"regenerative", ...geometry fields..., "output":"..."}
-///   {"mode":"script","csharp":"...","output":"..."}
+///   {"mode":"core"|"builder", ...EngineSpecs fields..., "output":"..."}  ← preferred
+///   {"mode":"script","csharp":"...","output":"..."}                     ← legacy Roslyn
 /// </summary>
 public static class Program
 {
@@ -21,13 +22,13 @@ public static class Program
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            string mode = root.TryGetProperty("mode", out var m) ? m.GetString() ?? "builder" : "builder";
+            string mode = root.TryGetProperty("mode", out var m) ? m.GetString() ?? "core" : "core";
             string output = root.TryGetProperty("output", out var o)
                 ? o.GetString() ?? "engine_output.stl"
                 : "engine_output.stl";
             Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
 
-            float voxelMm = root.TryGetProperty("voxel_mm", out var v) ? v.GetSingle() : 1.0f;
+            float voxelMm = root.TryGetProperty("voxel_mm", out var v) ? v.GetSingle() : 1.5f;
             voxelMm = Math.Clamp(voxelMm, 0.5f, 2.0f);
 
             if (mode == "script")
@@ -35,31 +36,68 @@ public static class Program
                 string csharp = root.GetProperty("csharp").GetString()
                     ?? throw new InvalidOperationException("script mode requires csharp");
                 PicoRunner.CompileAndRun(csharp, output, voxelMm);
-            }
-            else
-            {
-                var spec = EngineSpec.FromJson(root);
-                // LEAP 71 Library.Go-equivalent: register global library so
-                // ShapeKernel BasePipe / Lattice / Voxels constructors resolve.
-                using var lib = new Library(voxelMm);
-                Library.RegisterGlobalLibrary(lib);
-                try
+                Console.WriteLine(JsonSerializer.Serialize(new
                 {
-                    var mesh = EngineBuilders.Build(lib, spec);
-                    mesh.SaveToStlFile(output);
-                }
-                finally
-                {
-                    Library.UnregisterGlobalLibrary();
-                }
+                    ok = true,
+                    mode = "script",
+                    output = Path.GetFullPath(output),
+                    bytes = new FileInfo(output).Length
+                }));
+                return 0;
             }
 
-            Console.WriteLine(JsonSerializer.Serialize(new
+            // Primary path: deterministic AeroForge.Core CEM from EngineSpecs JSON.
+            var specs = EngineSpecs.FromJson(root);
+            specs.VoxelMm = voxelMm;
+
+            using var lib = new Library(voxelMm);
+            Library.RegisterGlobalLibrary(lib);
+            try
             {
-                ok = true,
-                output = Path.GetFullPath(output),
-                bytes = new FileInfo(output).Length
-            }));
+                // Legacy aerospike / swirler presets still route through EngineBuilders.
+                string preset = root.TryGetProperty("preset", out var p) ? p.GetString() ?? "regenerative" : "regenerative";
+                Mesh mesh;
+                object? physicsSummary = null;
+
+                if (preset is "aerospike" or "swirler")
+                {
+                    var legacy = EngineSpec.FromJson(root);
+                    mesh = EngineBuilders.Build(lib, legacy);
+                }
+                else
+                {
+                    var (msh, physics) = AeroForgeEngine.BuildWithPhysics(specs);
+                    mesh = msh;
+                    physicsSummary = new
+                    {
+                        throat_radius_mm = physics.rThroat,
+                        exit_radius_mm = physics.rExit,
+                        chamber_radius_mm = physics.rChamber,
+                        length_mm = physics.LengthMm,
+                        expansion_ratio = physics.ExpansionRatio,
+                        cf = physics.Cf,
+                        isp_s = physics.IspS,
+                        throat_area_m2 = physics.ThroatAreaM2,
+                        cooling_channels = specs.CoolingChannelCount,
+                    };
+                }
+
+                mesh.SaveToStlFile(output);
+                Console.WriteLine(JsonSerializer.Serialize(new
+                {
+                    ok = true,
+                    mode = "core",
+                    preset,
+                    output = Path.GetFullPath(output),
+                    bytes = new FileInfo(output).Length,
+                    physics = physicsSummary,
+                }));
+            }
+            finally
+            {
+                Library.UnregisterGlobalLibrary();
+            }
+
             return 0;
         }
         catch (Exception ex)

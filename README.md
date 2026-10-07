@@ -31,22 +31,25 @@ cp .env.example .env   # set NVIDIA_API_KEY (+ optional NVIDIA_MODEL)
 ## Architecture
 
 ```
-frontend/                          Next.js App Router studio UI
-backend/ai_engine/                 FastAPI + thermo + NIM assembler orchestrator
+frontend/                              Next.js App Router studio UI
+backend/ai_engine/                     FastAPI + NIM → EngineSpecs JSON only
 backend/geometry_kernel/
-  modules/                         Deterministic CEM builders (Noyron-style)
-    ChamberBuilder.cs              Hollow Rao / parabolic chamber wall
-    CoolingChannelBuilder.cs       32–64 helical surface cooling grooves
-    ManifoldBuilder.cs             Toroidal rings + pipe stubs + AN/NPT ports
-    StructuralLatticeBuilder.cs    External Iso-Grid / Gyroid jacket
-    CustomEngine.cs                Four-step modular assembly
-  PicoRunner.cs                    Roslyn compile + PicoGK execute
-scripts/dev.sh                     Single-command local startup
+  AeroForge.Core/                      Deterministic CEM (engine compiler)
+    Physics/GasDynamics.cs             A_t, r_t, ε, L*, Isp
+    Physics/RaoContour.cs              Parabolic bell (Z,R) profile
+    Modules/ChamberBuilder.cs          Hollow revolved wall
+    Modules/CoolingBuilder.cs          32–64 helical conformal channels
+    Modules/ManifoldBuilder.cs         Toroids + pipe stubs + AN/NPT ports
+    Modules/InjectorBuilder.cs         Injector flange / showerhead
+    AeroForgeEngine.cs                 Master pipeline orchestrator
+  PicoRunner.cs                        Legacy Roslyn path (optional)
+scripts/dev.sh                         Single-command local startup
 ```
 
-Design flow: prompt + sliders → NIM emits **parameterized module calls only**
-(ChamberBuilder → CoolingChannelBuilder → ManifoldBuilder → StructuralLatticeBuilder)
-→ PicoGK voxels → watertight STL under `frontend/public/outputs/` → R3F viewport.
+Design flow: prompt + sliders → NIM extracts **EngineSpecs JSON** → C#
+`AeroForgeEngine.Build(specs)` (GasDynamics → Rao → hollow wall → cooling
+subtract → manifolds → injector) → watertight STL → R3F viewport.
+Typical compile: **under 5 seconds**.
 
 LEAP 71 dependencies (auto-fetched by `scripts/build_kernel.sh`):
 

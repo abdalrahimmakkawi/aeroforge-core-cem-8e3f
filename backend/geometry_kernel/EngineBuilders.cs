@@ -69,7 +69,27 @@ public static class EngineBuilders
     /// </summary>
     public static Mesh BuildRegenBell(Library lib, EngineSpec spec)
     {
-        return AeroForge.Modules.CustomEngine.GenerateFromEngineSpec(spec);
+        // Prefer deterministic AeroForge.Core CEM (physics → Rao → modules).
+        var coreSpecs = new AeroForge.Core.EngineSpecs
+        {
+            ThrustkN = EstimateThrustkN(spec),
+            ChamberPressureBar = 60f,
+            CoolingChannelCount = Math.Clamp(spec.ChannelCount <= 16 ? 48 : spec.ChannelCount, 32, 64),
+            WallThicknessMm = MathF.Max(spec.WallMm, 3.5f),
+            ChannelDepthMm = Math.Min(2.5f, MathF.Max(spec.WallMm, 3.5f) * 0.7f),
+            HelixTurns = MathF.Max(spec.HelixTurns, 2.0f),
+        };
+        // When explicit radii are provided (legacy path), still use Core modules via physics override length.
+        return AeroForge.Core.AeroForgeEngine.BuildMesh(coreSpecs);
+    }
+
+    private static float EstimateThrustkN(EngineSpec spec)
+    {
+        // Back-solve rough thrust from throat area assuming Cf≈1.5, Pc≈6 MPa.
+        float rtM = MathF.Max(spec.ThroatRadiusMm, 12f) / 1000f;
+        float at = MathF.PI * rtM * rtM;
+        float F = at * 6e6f * 1.5f; // N
+        return Math.Clamp(F / 1000f, 5f, 100f);
     }
 
     /// <summary>

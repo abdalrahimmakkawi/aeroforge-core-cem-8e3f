@@ -1,4 +1,4 @@
-"""NVIDIA NIM creative propulsion orchestrator."""
+"""NVIDIA NIM orchestrator — extracts EngineSpecs JSON for AeroForge.Core."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ load_dotenv(ROOT / ".env", override=False)
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 PREFERRED_MODEL = "nvidia/nemotron-4-340b-instruct"
-# meta/llama-3.3-70b-instruct is EOL on integrate.api.nvidia.com
 
 
 def _client() -> OpenAI:
@@ -86,7 +85,13 @@ def orchestrate(
             "propellant": propellant,
             "preset_hint": inferred,
             "thermo": sized,
-            "cad_stack": ["PicoGK", "Leap71.ShapeKernel", "Leap71.LatticeLibrary", "AeroForge.Geometry.EngineBuilders"],
+            "cad_stack": [
+                "AeroForge.Core",
+                "GasDynamics",
+                "RaoContour",
+                "PicoGK",
+                "Leap71.ShapeKernel",
+            ],
         },
     }
 
@@ -97,8 +102,8 @@ def orchestrate(
         client = _client()
         stream = client.chat.completions.create(
             model=model_used,
-            temperature=0.25,
-            max_tokens=1800,
+            temperature=0.2,
+            max_tokens=1200,
             stream=True,
             messages=[
                 {"role": "system", "content": SYSTEM},
@@ -113,41 +118,75 @@ def orchestrate(
         raw = "".join(chunks)
         ai = _extract_json(raw)
         reasoning = str(ai.get("reasoning") or raw[:1200])
-    except Exception as exc:  # noqa: BLE001 — fall back to deterministic ShapeKernel builders
+    except Exception as exc:  # noqa: BLE001
         reasoning = (
-            f"NIM call unavailable ({exc.__class__.__name__}: {exc}). "
-            "Falling back to ShapeKernel BasePipe regenerative / aerospike builders "
-            "sized from isentropic thermo."
+            f"NIM unavailable ({exc.__class__.__name__}: {exc}). "
+            "Falling back to deterministic EngineSpecs sized from isentropic thermo; "
+            "AeroForge.Core will compile the STL."
         )
-        ai = {
-            "preset": inferred,
-            "geometry": {},
-            "picogk_csharp": _default_csharp(inferred, sized),
-        }
+        ai = {"preset": inferred, "geometry": {}, "engine_specs": {}}
 
     geo_in = ai.get("geometry") if isinstance(ai.get("geometry"), dict) else {}
+    specs_in = ai.get("engine_specs") if isinstance(ai.get("engine_specs"), dict) else {}
     chosen_preset = str(ai.get("preset") or inferred).lower()
     if chosen_preset == "regen":
         chosen_preset = "regenerative"
     if chosen_preset not in ("aerospike", "regenerative", "swirler"):
         chosen_preset = inferred
 
-    raw_voxel = float(geo_in.get("voxel_mm", 1.2))
-    # Larger engines need coarser voxels for interactive STL size.
+    raw_voxel = float(geo_in.get("voxel_mm", 1.5))
     min_vox = 1.5 if thrust_kn >= 40 else 1.2
     voxel_mm = min(2.0, max(min_vox, raw_voxel if raw_voxel >= min_vox else min_vox))
+
+    channel_count = int(
+        specs_in.get(
+            "CoolingChannelCount",
+            geo_in.get("channel_count", 48),
+        )
+    )
+    channel_count = min(64, max(32, channel_count))
+    wall_mm = float(specs_in.get("WallThicknessMm", geo_in.get("wall_mm", 3.5)))
+    wall_mm = max(3.0, wall_mm)
+    helix = float(specs_in.get("HelixTurns", geo_in.get("helix_turns", 2.6)))
+    depth = float(specs_in.get("ChannelDepthMm", 2.5))
+    pipe_d = float(specs_in.get("PipeDiameterMm", 18.0))
+
+    engine_specs = {
+        "ThrustkN": float(specs_in.get("ThrustkN", thrust_kn)),
+        "ChamberPressureBar": float(
+            specs_in.get("ChamberPressureBar", chamber_pressure_mpa * 10.0)
+        ),
+        "CoolingChannelCount": channel_count,
+        "WallThicknessMm": wall_mm,
+        "ChannelDepthMm": depth,
+        "HelixTurns": helix,
+        "PipeDiameterMm": pipe_d,
+        "AmbientPressurePa": ambient_pressure_pa,
+        "Gamma": float(sized.get("gamma", 1.20)),
+        "VoxelMm": voxel_mm,
+    }
+
     geometry = {
         "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
         "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
         "length_mm": float(geo_in.get("length_mm", sized["length_mm"])),
-        # Modular CEM cooling channels: 32–64 helical starts (visible outer ribs).
-        "channel_count": int(min(64, max(32, geo_in.get("channel_count", 48)))),
-        "channel_radius_mm": float(geo_in.get("channel_radius_mm", 1.2)),
-        "wall_mm": float(max(3.0, geo_in.get("wall_mm", 3.5))),
-        "helix_turns": float(geo_in.get("helix_turns", 2.6)),
+        "channel_count": channel_count,
+        "channel_radius_mm": float(geo_in.get("channel_radius_mm", depth * 0.5)),
+        "wall_mm": wall_mm,
+        "helix_turns": helix,
         "voxel_mm": voxel_mm,
     }
-    csharp = str(ai.get("picogk_csharp") or _default_csharp(chosen_preset, sized | geometry))
+
+    csharp = _display_csharp(engine_specs)
+
+    if not reasoning or reasoning.startswith("NIM unavailable"):
+        pass
+    elif "AeroForge.Core" not in reasoning and "GasDynamics" not in reasoning:
+        reasoning = (
+            "Sized via AeroForge.Core GasDynamics + RaoContour; assembled by "
+            "ChamberBuilder → CoolingBuilder → ManifoldBuilder → InjectorBuilder. "
+            + reasoning
+        )
 
     return {
         "reasoning": reasoning,
@@ -155,63 +194,33 @@ def orchestrate(
         "thermo": sized,
         "preset": chosen_preset,
         "geometry": geometry,
+        "engine_specs": engine_specs,
         "picogk_csharp": csharp,
     }
 
 
-def _default_csharp(preset: str, geo: dict[str, Any]) -> str:
-    builder = {
-        "swirler": "BuildSwirler",
-        "aerospike": "BuildAerospike",
-    }.get(preset, "BuildRegenBell")
-    rt = float(geo.get("throat_radius_mm", 38))
-    re = float(geo.get("exit_radius_mm", 95))
-    length = float(geo.get("length_mm", 220))
-    eps = float(geo.get("expansion_ratio", 8))
-    if builder == "BuildRegenBell":
-        channels = int(min(64, max(32, geo.get("channel_count", 48))))
-        return f"""
-using AeroForge.Modules;
+def _display_csharp(specs: dict[str, Any]) -> str:
+    """UI-facing snippet showing the deterministic Core call (not executed via Roslyn)."""
+    return f"""// AeroForge.Core — deterministic CEM (no LLM geometry)
+using AeroForge.Core;
+using AeroForge.Core.Physics;
+using AeroForge.Core.Modules;
 
 var specs = new EngineSpecs {{
-    rThroat = {rt:0.3f}f,
-    rExit = {re:0.3f}f,
-    rInjector = {rt * 2.35:0.3f}f,
-    length = {length:0.3f}f,
-    wallMm = 3.5f,
-    expansionRatio = {eps:0.3f}f,
-    channelCount = {channels},
-    channelDepthMm = 2.5f
+    ThrustkN = {float(specs['ThrustkN']):0.2f}f,
+    ChamberPressureBar = {float(specs['ChamberPressureBar']):0.1f}f,
+    CoolingChannelCount = {int(specs['CoolingChannelCount'])},
+    WallThicknessMm = {float(specs['WallThicknessMm']):0.1f}f,
+    ChannelDepthMm = {float(specs['ChannelDepthMm']):0.1f}f,
+    HelixTurns = {float(specs['HelixTurns']):0.1f}f,
+    PipeDiameterMm = {float(specs['PipeDiameterMm']):0.1f}f
 }};
 
-// 1. Build Base Chamber
-Voxels chamber = ChamberBuilder.BuildRaoBell(specs.rThroat, specs.rExit, specs.length, specs.wallMm);
-
-// 2. Add Visible Surface Cooling Channels
-Voxels channels = CoolingChannelBuilder.BuildHelical(chamber, count: specs.channelCount, depthMm: specs.channelDepthMm);
-chamber.BoolSubtract(channels);
-
-// 3. Attach Visible Distribution Manifolds & Fuel Ports
-Voxels manifolds = ManifoldBuilder.BuildToroidalRings(specs.rInjector, pipeDiameter: 18.0f, rExit: specs.rExit, length: specs.length);
-chamber.BoolAdd(manifolds);
-
-// 4. Wrap with Structural Ribs/Lattice
-Voxels latticeJacket = StructuralLatticeBuilder.BuildIsoGrid(chamber, ribThickness: 1.5f);
-chamber.BoolAdd(latticeJacket);
-
-return chamber.mshAsMesh();
-""".strip()
-    return f"""
-var spec = new EngineSpec {{
-    Preset = "{preset}",
-    ThroatRadiusMm = {rt:0.3f}f,
-    ExitRadiusMm = {re:0.3f}f,
-    LengthMm = {length:0.3f}f,
-    ChannelCount = 16,
-    ChannelRadiusMm = 1.35f,
-    WallMm = 2.4f,
-    HelixTurns = 2.6f,
-    ExpansionRatio = {eps:0.3f}f
-}};
-return EngineBuilders.{builder}(lib, spec);
+// 1. GasDynamics.Calculate → A_t, r_t, ε, L*
+// 2. RaoContour.GetEngineProfile → parabolic bell
+// 3. ChamberBuilder.BuildHollowWall → hollow jacket
+// 4. CoolingBuilder.BuildConformalChannels → BoolSubtract (48 helical ribs)
+// 5. ManifoldBuilder.BuildRings → BoolAdd (toroids + pipe stubs)
+// 6. InjectorBuilder.BuildFlange → BoolAdd
+return AeroForgeEngine.BuildMesh(specs);
 """.strip()
