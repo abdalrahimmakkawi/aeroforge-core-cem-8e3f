@@ -58,10 +58,32 @@ class DesignResponse(BaseModel):
     geometry: dict[str, Any]
     picogk_csharp: str
     stl_url: str
+    stl_preview_url: str = ""
     stl_path: str
     metrics: dict[str, Any]
     compile_ms: float
     kernel_mode: str
+
+
+def _make_preview_stl(full_path: Path, preview_path: Path, *, face_count: int = 60000) -> dict[str, Any]:
+    """Decimate full STL for fast viewport load; download keeps the full mesh."""
+    try:
+        import trimesh  # local import — optional at import time
+
+        mesh = trimesh.load(full_path, force="mesh")
+        faces = int(len(mesh.faces))
+        if faces > face_count:
+            mesh = mesh.simplify_quadric_decimation(face_count=face_count)
+        mesh.export(preview_path)
+        return {
+            "ok": True,
+            "faces": int(len(mesh.faces)),
+            "bytes": preview_path.stat().st_size,
+        }
+    except Exception as exc:  # noqa: BLE001
+        # Fallback: copy full mesh so the viewport still works.
+        preview_path.write_bytes(full_path.read_bytes())
+        return {"ok": False, "error": f"{exc.__class__.__name__}: {exc}", "bytes": preview_path.stat().st_size}
 
 
 def _run_kernel(payload: dict[str, Any]) -> dict[str, Any]:
@@ -137,12 +159,12 @@ def design(req: DesignRequest) -> DesignResponse:
 
     geo = plan["geometry"]
     engine_specs = plan.get("engine_specs") if isinstance(plan.get("engine_specs"), dict) else {}
-    # Primary path: deterministic AeroForge.Core CEM from EngineSpecs JSON.
-    # Legacy Roslyn script mode only when explicitly requested AND preset needs it.
+    # ALWAYS run AeroForge.Core for regenerative nozzles — never LLM geometry.
+    # Aerospike/swirler still use deterministic EngineBuilders (not Roslyn drafts).
     use_core = plan["preset"] == "regenerative" or not req.use_ai_script
     payload: dict[str, Any] = {
         "job_id": job_id,
-        "mode": "core" if use_core else ("script" if req.use_ai_script else "core"),
+        "mode": "core" if use_core else "builder",
         "preset": plan["preset"],
         "thrust_kn": req.thrust_kn,
         "chamber_pressure_mpa": req.chamber_pressure_mpa,
@@ -192,6 +214,14 @@ def design(req: DesignRequest) -> DesignResponse:
 
     stable.write_bytes(stl_path.read_bytes())
     size = stl_path.stat().st_size
+
+    preview_name = f"engine_{job_id}_preview.stl"
+    preview_path = OUTPUT_DIR / preview_name
+    preview_meta = _make_preview_stl(stl_path, preview_path)
+    stable_preview = OUTPUT_DIR / "engine_output_preview.stl"
+    if preview_path.exists():
+        stable_preview.write_bytes(preview_path.read_bytes())
+
     # Rough metal volume from STL size is wrong; use thermo length * annular estimate.
     rt = geo["throat_radius_mm"] / 10.0  # cm
     re = geo["exit_radius_mm"] / 10.0
@@ -199,19 +229,30 @@ def design(req: DesignRequest) -> DesignResponse:
     vol_cm3 = max(8.0, 0.35 * 3.1416 * ((re**2 + rt**2) / 2) * L * 0.15)
     mass_kg = vol_cm3 * INCONEL_DENSITY / 1000.0
 
+    # Clarify in the UI that geometry came from AeroForge.Core, not LLM drafts.
+    reasoning = plan["reasoning"]
+    if "AeroForge.Core" not in reasoning:
+        reasoning = (
+            "Geometry compiled by AeroForge.Core (deterministic CEM) — not LLM mesh code. "
+            + reasoning
+        )
+
     return DesignResponse(
         ok=True,
         job_id=job_id,
-        reasoning=plan["reasoning"],
+        reasoning=reasoning,
         model=plan["model"],
         thermo=plan["thermo"],
         preset=plan["preset"],
         geometry=geo,
         picogk_csharp=plan["picogk_csharp"],
         stl_url=f"/outputs/{stl_name}",
+        stl_preview_url=f"/outputs/{preview_name}",
         stl_path=str(stl_path),
         metrics={
             "stl_bytes": size,
+            "stl_preview_bytes": int(preview_meta.get("bytes") or 0),
+            "stl_preview_faces": int(preview_meta.get("faces") or 0),
             "est_volume_cm3": round(vol_cm3, 2),
             "est_mass_kg_inconel718": round(mass_kg, 3),
             "density_g_cm3": INCONEL_DENSITY,

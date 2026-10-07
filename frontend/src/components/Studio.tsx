@@ -31,6 +31,7 @@ type DesignResult = {
   geometry: Record<string, number>;
   picogk_csharp: string;
   stl_url: string;
+  stl_preview_url?: string;
   metrics: Record<string, number>;
   compile_ms: number;
   kernel_mode: string;
@@ -81,9 +82,12 @@ export default function Studio() {
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Viewport loads the lightweight preview; Download STL uses the full mesh.
   const stlUrl = useMemo(() => {
-    if (!result?.stl_url) return null;
-    return `${API_BASE}${result.stl_url}?v=${result.job_id}`;
+    if (!result) return null;
+    const path = result.stl_preview_url || result.stl_url;
+    if (!path) return null;
+    return `${API_BASE}${path}?v=${result.job_id}`;
   }, [result]);
 
   useEffect(() => {
@@ -143,11 +147,12 @@ export default function Studio() {
       }
       setResult(data);
       const kb = (data.metrics?.stl_bytes ?? 0) / 1024;
+      const pkb = (data.metrics?.stl_preview_bytes ?? 0) / 1024;
       setChat((c) => [
         ...c,
         {
           role: "agent",
-          text: `${data.reasoning}\n\nKernel ${data.kernel_mode} · ${Math.round(data.compile_ms)} ms · ${kb.toFixed(0)} KB`,
+          text: `${data.reasoning}\n\nKernel ${data.kernel_mode} (${data.model}) · ${Math.round(data.compile_ms)} ms · full ${kb.toFixed(0)} KB · viewport ${pkb > 0 ? pkb.toFixed(0) + " KB" : "n/a"}`,
         },
       ]);
       requestAnimationFrame(() => {

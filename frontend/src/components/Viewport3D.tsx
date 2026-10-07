@@ -2,7 +2,7 @@
 
 import { Canvas, useThree } from "@react-three/fiber";
 import { Bounds, Center, Environment, OrbitControls } from "@react-three/drei";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 
@@ -30,12 +30,18 @@ function StlMesh({
   onStatus?: (s: string) => void;
 }) {
   const [geom, setGeom] = useState<THREE.BufferGeometry | null>(null);
+  // Keep callbacks in refs so the load effect only re-runs when `url` changes.
+  // Inline parent lambdas were re-downloading the STL on every React render.
+  const onMetricsRef = useRef(onMetrics);
+  const onStatusRef = useRef(onStatus);
+  onMetricsRef.current = onMetrics;
+  onStatusRef.current = onStatus;
 
   useEffect(() => {
     let alive = true;
     let loaded: THREE.BufferGeometry | null = null;
     const loader = new STLLoader();
-    onStatus?.("Downloading mesh…");
+    onStatusRef.current?.("Downloading mesh…");
 
     loader.load(
       url,
@@ -44,39 +50,39 @@ function StlMesh({
           g.dispose();
           return;
         }
-        onStatus?.("Building GPU mesh…");
+        onStatusRef.current?.("Building GPU mesh…");
         g.computeVertexNormals();
         g.computeBoundingBox();
         g.center();
         g.computeBoundingBox();
         loaded = g;
         setGeom(g);
-        if (onMetrics && g.boundingBox) {
+        if (onMetricsRef.current && g.boundingBox) {
           const size = new THREE.Vector3();
           g.boundingBox.getSize(size);
           const idx = g.index;
           const tris = idx ? idx.count / 3 : g.attributes.position.count / 3;
-          onMetrics({ bbox: size, triangles: Math.round(tris) });
+          onMetricsRef.current({ bbox: size, triangles: Math.round(tris) });
         }
-        onStatus?.("");
+        onStatusRef.current?.("");
       },
       (ev) => {
         if (!alive || !ev.lengthComputable) return;
         const pct = Math.round((100 * ev.loaded) / Math.max(ev.total, 1));
-        onStatus?.(`Downloading mesh… ${pct}%`);
+        onStatusRef.current?.(`Downloading mesh… ${pct}%`);
       },
       (err) => {
         if (!alive) return;
         console.error("STL load failed", err);
         setGeom(null);
-        onStatus?.("Mesh load failed — retry Forge design");
+        onStatusRef.current?.("Mesh load failed — retry Forge design");
       }
     );
     return () => {
       alive = false;
       loaded?.dispose();
     };
-  }, [url, onMetrics, onStatus]);
+  }, [url]);
 
   const clipPlane = useMemo(() => {
     if (Math.abs(sliceZ) >= 78) return null;
