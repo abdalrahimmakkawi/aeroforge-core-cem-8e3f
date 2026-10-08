@@ -230,11 +230,11 @@ def design(req: DesignRequest) -> DesignResponse:
     vol_cm3 = max(8.0, 0.35 * 3.1416 * ((re**2 + rt**2) / 2) * L * 0.15)
     mass_kg = vol_cm3 * INCONEL_DENSITY / 1000.0
 
-    # Clarify in the UI that geometry came from AeroForge.Core, not LLM drafts.
+    # Clarify in the UI that geometry came from Algorithm X field engines, not LLM drafts.
     reasoning = plan["reasoning"]
-    if "AeroForge.Core" not in reasoning:
+    if "Algorithm X" not in reasoning and "AlgorithmX" not in reasoning:
         reasoning = (
-            "Geometry compiled by AeroForge.Core (deterministic CEM) — not LLM mesh code. "
+            "Geometry compiled by Algorithm X (deterministic field CEM) — not LLM mesh code. "
             + reasoning
         )
 
