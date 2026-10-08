@@ -49,8 +49,9 @@ public static class Program
                 return 0;
             }
 
-            var specs = EngineSpecs.FromJson(root);
-            specs.VoxelMm = voxelMm;
+            var engineConfig = EngineConfig.FromJson(root);
+            engineConfig.VoxelMm = voxelMm;
+            var specs = engineConfig.ToEngineSpecs();
             string preset = root.TryGetProperty("preset", out var p) ? p.GetString() ?? "regenerative" : "regenerative";
             object? physicsSummary = null;
             long bytes;
@@ -67,7 +68,6 @@ public static class Program
                         var legacy = EngineSpec.FromJson(root);
                         mesh = EngineBuilders.Build(lib, legacy);
                         resolvedMode = "builder";
-                        // Report thermo-driven extents so the UI matches the forged mesh.
                         var phys = GasDynamics.Calculate(
                             specs.ThrustkN,
                             specs.ChamberPressureBar,
@@ -86,8 +86,8 @@ public static class Program
                     }
                     else
                     {
-                        // Default regenerative path: Algorithm X field-based synthesis.
-                        var (msh, physics) = AlgorithmXMaster.GenerateWithPhysics(specs);
+                        // Default regenerative path: Algorithm X field CEM from EngineConfig JSON.
+                        var (msh, physics) = AlgorithmXMaster.ExecuteWithPhysics(engineConfig);
                         mesh = msh;
                         resolvedMode = "algorithmx";
                         physicsSummary = PhysicsSummary(physics, specs, "algorithmx");

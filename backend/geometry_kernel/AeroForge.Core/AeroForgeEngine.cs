@@ -25,6 +25,12 @@ public sealed class EngineSpecs
     public float MolarMass { get; set; } = 21f;
     public string Propellant { get; set; } = "lox_methane";
     public float VoxelMm { get; set; } = 1.5f;
+    /// <summary>Algorithm X TPMS cell size (mm).</summary>
+    public float GyroidCellSizeMm { get; set; } = 3.2f;
+    /// <summary>Algorithm X Murray-law manifold tip budget.</summary>
+    public int ManifoldBranches { get; set; } = 64;
+    /// <summary>Cooling architecture token from EngineConfig.</summary>
+    public string CoolingType { get; set; } = "gyroid_tpms";
 
     public static EngineSpecs FromJson(JsonElement root)
     {
@@ -87,6 +93,13 @@ public sealed class EngineSpecs
                     ? (prop2.GetString() ?? "lox_methane")
                     : "lox_methane"),
             VoxelMm = Math.Clamp(GetF("VoxelMm", "voxel_mm", 1.5f), 0.8f, 2.0f),
+            GyroidCellSizeMm = Math.Clamp(GetF("GyroidCellSizeMm", "gyroid_cell_size_mm", 3.2f), 2.0f, 6.0f),
+            ManifoldBranches = Math.Clamp(GetI("ManifoldBranches", "manifold_branches", 64), 32, 128),
+            CoolingType = root.TryGetProperty("cooling_type", out var ct) && ct.ValueKind == JsonValueKind.String
+                ? (ct.GetString() ?? "gyroid_tpms")
+                : (src.TryGetProperty("CoolingType", out var ct2) && ct2.ValueKind == JsonValueKind.String
+                    ? (ct2.GetString() ?? "gyroid_tpms")
+                    : "gyroid_tpms"),
         };
     }
 }
