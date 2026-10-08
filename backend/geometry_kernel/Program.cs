@@ -1,14 +1,17 @@
 ﻿using System.Text.Json;
 using AeroForge.Core;
+using AeroForge.Core.Physics;
+using AlgorithmX.Core;
 using PicoGK;
 
 namespace AeroForge.Geometry;
 
 /// <summary>
-/// CLI entry: reads EngineSpecs JSON, runs deterministic AeroForge.Core CEM, writes STL.
+/// CLI entry: EngineSpecs JSON → Algorithm X / AeroForge.Core → STL.
 /// Modes:
-///   {"mode":"core"|"builder", ...EngineSpecs fields..., "output":"..."}  ← preferred
-///   {"mode":"script","csharp":"...","output":"..."}                     ← legacy Roslyn
+///   {"mode":"algorithmx"|"core", ...}  ← Algorithm X generative (default regenerative)
+///   {"mode":"flight", ...}             ← AeroForge.Core flight-grade CEM
+///   {"mode":"script","csharp":"..."}   ← legacy Roslyn
 /// </summary>
 public static class Program
 {
@@ -22,7 +25,7 @@ public static class Program
 
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            string mode = root.TryGetProperty("mode", out var m) ? m.GetString() ?? "core" : "core";
+            string mode = root.TryGetProperty("mode", out var m) ? m.GetString() ?? "algorithmx" : "algorithmx";
             string output = root.TryGetProperty("output", out var o)
                 ? o.GetString() ?? "engine_output.stl"
                 : "engine_output.stl";
@@ -46,41 +49,39 @@ public static class Program
                 return 0;
             }
 
-            // Primary path: deterministic AeroForge.Core CEM from EngineSpecs JSON.
             var specs = EngineSpecs.FromJson(root);
             specs.VoxelMm = voxelMm;
             string preset = root.TryGetProperty("preset", out var p) ? p.GetString() ?? "regenerative" : "regenerative";
             object? physicsSummary = null;
             long bytes;
+            string resolvedMode = mode;
 
             {
                 using var lib = new Library(voxelMm);
                 Library.RegisterGlobalLibrary(lib);
                 try
                 {
-                    // Legacy aerospike / swirler presets still route through EngineBuilders.
                     Mesh mesh;
                     if (preset is "aerospike" or "swirler")
                     {
                         var legacy = EngineSpec.FromJson(root);
                         mesh = EngineBuilders.Build(lib, legacy);
+                        resolvedMode = "builder";
                     }
-                    else
+                    else if (mode is "flight" or "core_flight")
                     {
                         var (msh, physics) = AeroForgeEngine.BuildWithPhysics(specs);
                         mesh = msh;
-                        physicsSummary = new
-                        {
-                            throat_radius_mm = physics.rThroat,
-                            exit_radius_mm = physics.rExit,
-                            chamber_radius_mm = physics.rChamber,
-                            length_mm = physics.LengthMm,
-                            expansion_ratio = physics.ExpansionRatio,
-                            cf = physics.Cf,
-                            isp_s = physics.IspS,
-                            throat_area_m2 = physics.ThroatAreaM2,
-                            cooling_channels = specs.CoolingChannelCount,
-                        };
+                        resolvedMode = "flight";
+                        physicsSummary = PhysicsSummary(physics, specs, "flight");
+                    }
+                    else
+                    {
+                        // Default regenerative path: Algorithm X field-based synthesis.
+                        var (msh, physics) = AlgorithmXMaster.GenerateWithPhysics(specs);
+                        mesh = msh;
+                        resolvedMode = "algorithmx";
+                        physicsSummary = PhysicsSummary(physics, specs, "algorithmx");
                     }
 
                     mesh.SaveToStlFile(output);
@@ -90,13 +91,12 @@ public static class Program
                 {
                     Library.UnregisterGlobalLibrary();
                 }
-            } // Library disposed here (may log to stdout)
+            }
 
-            // Emit result JSON LAST so Python API parsers see it as the final line.
             Console.WriteLine(JsonSerializer.Serialize(new
             {
                 ok = true,
-                mode = "core",
+                mode = resolvedMode,
                 preset,
                 output = Path.GetFullPath(output),
                 bytes,
@@ -110,5 +110,23 @@ public static class Program
             Console.WriteLine(JsonSerializer.Serialize(new { ok = false, error = ex.Message }));
             return 1;
         }
+    }
+
+    private static object PhysicsSummary(GasDynamicsResult physics, EngineSpecs specs, string engine)
+    {
+        return new
+        {
+            engine,
+            throat_radius_mm = physics.rThroat,
+            exit_radius_mm = physics.rExit,
+            chamber_radius_mm = physics.rChamber,
+            length_mm = physics.LengthMm,
+            expansion_ratio = physics.ExpansionRatio,
+            cf = physics.Cf,
+            isp_s = physics.IspS,
+            throat_area_m2 = physics.ThroatAreaM2,
+            cooling_channels = specs.CoolingChannelCount,
+            injector_elements = specs.InjectorElementCount,
+        };
     }
 }

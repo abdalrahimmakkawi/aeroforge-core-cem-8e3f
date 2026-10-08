@@ -159,12 +159,12 @@ def design(req: DesignRequest) -> DesignResponse:
 
     geo = plan["geometry"]
     engine_specs = plan.get("engine_specs") if isinstance(plan.get("engine_specs"), dict) else {}
-    # ALWAYS run AeroForge.Core for regenerative nozzles — never LLM geometry.
-    # Aerospike/swirler still use deterministic EngineBuilders (not Roslyn drafts).
-    use_core = plan["preset"] == "regenerative" or not req.use_ai_script
+    # Regenerative → Algorithm X field synthesis (not LLM geometry).
+    # Aerospike/swirler still use deterministic EngineBuilders.
+    use_algorithm_x = plan["preset"] == "regenerative" or not req.use_ai_script
     payload: dict[str, Any] = {
         "job_id": job_id,
-        "mode": "core" if use_core else "builder",
+        "mode": "algorithmx" if use_algorithm_x else "builder",
         "preset": plan["preset"],
         "thrust_kn": req.thrust_kn,
         "chamber_pressure_mpa": req.chamber_pressure_mpa,
@@ -193,11 +193,12 @@ def design(req: DesignRequest) -> DesignResponse:
         "AmbientPressurePa": req.ambient_pressure_pa,
     }
 
-    kernel_mode = "core"
+    kernel_mode = "algorithmx"
     result = _run_kernel(payload)
-    if not result.get("ok") and payload.get("mode") == "script":
-        payload["mode"] = "core"
-        kernel_mode = "core_fallback"
+    if not result.get("ok") and payload.get("mode") == "algorithmx":
+        # Fall back to flight-grade AeroForge.Core if Algorithm X fails.
+        payload["mode"] = "flight"
+        kernel_mode = "flight_fallback"
         result = _run_kernel(payload)
     elif result.get("ok"):
         kernel_mode = str(result.get("mode") or payload["mode"])

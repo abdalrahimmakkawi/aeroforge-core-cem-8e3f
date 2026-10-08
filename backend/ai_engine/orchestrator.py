@@ -133,10 +133,10 @@ def orchestrate(
     model_used = _model()
     ai: dict[str, Any] = {}
     reasoning = (
-        "Flight-grade AeroForge.Core synthesis (deterministic, not LLM geometry): "
-        "GasDynamics + RaoContour → ChamberBuilder shell → VariableAspectCoolingBuilder "
-        "(teardrop channels) → ManifoldPlumbingBuilder → InjectorHeadBuilder (coax swirlers) "
-        "→ IsogridStiffenerBuilder."
+        "Algorithm X generative synthesis (deterministic field math, not LLM geometry): "
+        "PhysicsEngine Rao gas core → GyroidHeatExchangerEngine (TPMS, throat-dense) → "
+        "BiomimeticManifoldEngine (Murray-law tree) → AlgorithmicInjectorEngine "
+        "(60–120 coax swirlers + LOX/CH₄ plenums)."
     )
 
     # Core path: skip NIM by default. Optional enrichment with a hard wall-clock timeout.
@@ -190,8 +190,10 @@ def orchestrate(
     helix = float(specs_in.get("HelixTurns", geo_in.get("helix_turns", 2.8)))
     depth = float(specs_in.get("ChannelDepthMm", 2.5))
     pipe_d = float(specs_in.get("PipeDiameterMm", 18.0))
-    injector_n = int(specs_in.get("InjectorElementCount", 36))
-    injector_n = min(48, max(18, injector_n))
+    injector_n = int(specs_in.get("InjectorElementCount", 72))
+    if injector_n < 60:
+        injector_n = 72
+    injector_n = min(120, max(60, injector_n))
 
     engine_specs = {
         "ThrustkN": float(specs_in.get("ThrustkN", thrust_kn)),
@@ -223,7 +225,7 @@ def orchestrate(
 
     return {
         "reasoning": reasoning,
-        "model": model_used if not skip_llm else "aeroforge.core/deterministic",
+        "model": model_used if not skip_llm else "algorithmx.core/deterministic",
         "thermo": sized,
         "preset": chosen_preset,
         "geometry": geometry,
@@ -233,28 +235,24 @@ def orchestrate(
 
 
 def _display_csharp(specs: dict[str, Any]) -> str:
-    inj = int(specs.get("InjectorElementCount", 36))
-    return f"""// AeroForge.Core — flight-grade multi-component CEM (no LLM geometry)
+    inj = int(specs.get("InjectorElementCount", 72))
+    return f"""// Algorithm X — field-based generative propulsion (no LLM geometry)
+using AlgorithmX.Core;
 using AeroForge.Core;
-using AeroForge.Core.Physics;
-using AeroForge.Core.Modules;
 
 var specs = new EngineSpecs {{
     ThrustkN = {float(specs['ThrustkN']):0.2f}f,
     ChamberPressureBar = {float(specs['ChamberPressureBar']):0.1f}f,
-    CoolingChannelCount = {int(specs['CoolingChannelCount'])},
     WallThicknessMm = {float(specs['WallThicknessMm']):0.1f}f,
-    HelixTurns = {float(specs['HelixTurns']):0.1f}f,
     PipeDiameterMm = {float(specs['PipeDiameterMm']):0.1f}f,
     InjectorElementCount = {inj}
 }};
 
-// BuildFlightGradeEngine:
-// 1. GasDynamics + RaoContour.GetProfile
-// 2. ChamberBuilder.BuildHollowShell
-// 3. VariableAspectCoolingBuilder.GeneratePassages → BoolSubtract
-// 4. ManifoldPlumbingBuilder.GenerateRingsAndPorts → BoolAdd
-// 5. InjectorHeadBuilder.GenerateHead (36 coax swirlers) → BoolAdd
-// 6. IsogridStiffenerBuilder.GenerateGrid → BoolAdd
-return AeroForgeEngine.BuildFlightGradeEngine(specs).mshAsMesh();
+// AlgorithmXMaster.GenerateEngine:
+// 1. PhysicsEngine.GetGasPath — Rao gas core
+// 2. GyroidHeatExchangerEngine — TPMS cooling (throat-dense)
+// 3. BiomimeticManifoldEngine — Murray-law branching feeds
+// 4. AlgorithmicInjectorEngine — coax swirlers + LOX/CH4 plenums
+// 5. Monolithic BoolSubtract / BoolAdd field union
+return AlgorithmXMaster.GenerateMesh(specs);
 """.strip()

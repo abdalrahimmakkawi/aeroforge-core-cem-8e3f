@@ -73,7 +73,7 @@ public sealed class EngineSpecs
             ChannelDepthMm = Math.Clamp(GetF("ChannelDepthMm", "channel_depth_mm", 2.5f), 1.2f, 4f),
             HelixTurns = Math.Clamp(GetF("HelixTurns", "helix_turns", 2.8f), 1.8f, 4f),
             PipeDiameterMm = Math.Clamp(GetF("PipeDiameterMm", "pipe_diameter_mm", 18f), 10f, 28f),
-            InjectorElementCount = Math.Clamp(GetI("InjectorElementCount", "injector_elements", 36), 18, 48),
+            InjectorElementCount = Math.Clamp(GetI("InjectorElementCount", "injector_elements", 72), 18, 120),
             AmbientPressurePa = GetF("AmbientPressurePa", "ambient_pressure_pa", 101325f),
             Gamma = GetF("Gamma", "gamma", 1.20f),
             VoxelMm = Math.Clamp(GetF("VoxelMm", "voxel_mm", 1.5f), 0.8f, 2.0f),
