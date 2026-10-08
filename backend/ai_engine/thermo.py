@@ -117,6 +117,20 @@ def size_engine(
     re = rt * math.sqrt(epsilon)
     mdot = chamber_pressure_pa * at / c_star
     isp = thrust_n / (mdot * G0)
+    rt_mm = rt * 1000.0
+    re_mm = re * 1000.0
+    rc_mm = rt_mm * 2.35
+    thrust_kn = thrust_n / 1000.0
+    # Match AeroForge.Core GasDynamics length so live UI ≈ forged mesh.
+    l_star = 700.0
+    vc = l_star * (at * 1e9)
+    l_conv = (rc_mm - rt_mm) / math.tan(math.radians(30.0))
+    l_bell = 0.80 * (re_mm - rt_mm) / math.tan(math.radians(15.0))
+    l_cyl_raw = vc / (math.pi * rc_mm * rc_mm) - 0.5 * l_conv
+    l_cyl = min(max(l_cyl_raw, rt_mm * 1.6), rt_mm * 4.2)
+    max_len = min(max(150.0 + thrust_kn * 3.4, 160.0), 420.0)
+    min_len = min(max(110.0 + thrust_kn * 1.2, 120.0), 220.0)
+    length_mm = min(max(l_cyl + l_conv + l_bell, min_len), max_len)
     return {
         "propellant": propellant,
         "propellant_label": gas["label"],
@@ -129,14 +143,14 @@ def size_engine(
         "expansion_ratio": epsilon,
         "exit_mach": me,
         "throat_area_m2": at,
-        "throat_radius_mm": rt * 1000.0,
-        "exit_radius_mm": re * 1000.0,
-        "chamber_radius_mm": rt * 2.4 * 1000.0,
+        "throat_radius_mm": rt_mm,
+        "exit_radius_mm": re_mm,
+        "chamber_radius_mm": rc_mm,
         "mass_flow_kg_s": mdot,
         "isp_s": isp,
         "thrust_n": thrust_n,
         "chamber_pressure_pa": chamber_pressure_pa,
         "ambient_pressure_pa": ambient_pressure_pa,
         "exit_pressure_pa": pe,
-        "length_mm": max(120.0, (re - rt) * 1000.0 * 2.2 + rt * 1000.0 * 3.0),
+        "length_mm": length_mm,
     }

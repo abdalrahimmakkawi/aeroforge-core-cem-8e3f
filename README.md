@@ -25,7 +25,7 @@ cp .env.example .env   # set NVIDIA_API_KEY (+ optional NVIDIA_MODEL)
 |------|------|
 | AI Command Console | Natural-language prompt, presets, agent reasoning |
 | 3D Viewport | STL mesh, orbit controls, wireframe / thermal, section cut |
-| Thermodynamic Controls | Thrust, chamber pressure, propellant |
+| Thermodynamic Controls | Thrust, Pc, propellant — Isp / ε / throat / length update live |
 | PicoGK Code & Metrics | Generated C#, \(A_t\), \(\varepsilon\), Inconel mass, STL download |
 
 ## Architecture

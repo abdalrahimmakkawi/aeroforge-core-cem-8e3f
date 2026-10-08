@@ -21,6 +21,9 @@ public sealed class EngineSpecs
     public int InjectorElementCount { get; set; } = 36;
     public float AmbientPressurePa { get; set; } = 101325f;
     public float Gamma { get; set; } = 1.20f;
+    public float ChamberTempK { get; set; } = 3550f;
+    public float MolarMass { get; set; } = 21f;
+    public string Propellant { get; set; } = "lox_methane";
     public float VoxelMm { get; set; } = 1.5f;
 
     public static EngineSpecs FromJson(JsonElement root)
@@ -76,6 +79,13 @@ public sealed class EngineSpecs
             InjectorElementCount = Math.Clamp(GetI("InjectorElementCount", "injector_elements", 72), 18, 120),
             AmbientPressurePa = GetF("AmbientPressurePa", "ambient_pressure_pa", 101325f),
             Gamma = GetF("Gamma", "gamma", 1.20f),
+            ChamberTempK = GetF("ChamberTempK", "chamber_temp_k", 3550f),
+            MolarMass = GetF("MolarMass", "molar_mass", 21f),
+            Propellant = root.TryGetProperty("propellant", out var prop) && prop.ValueKind == JsonValueKind.String
+                ? (prop.GetString() ?? "lox_methane")
+                : (src.TryGetProperty("Propellant", out var prop2) && prop2.ValueKind == JsonValueKind.String
+                    ? (prop2.GetString() ?? "lox_methane")
+                    : "lox_methane"),
             VoxelMm = Math.Clamp(GetF("VoxelMm", "voxel_mm", 1.5f), 0.8f, 2.0f),
         };
     }
@@ -101,7 +111,9 @@ public static class AeroForgeEngine
             specs.ThrustkN,
             specs.ChamberPressureBar,
             specs.AmbientPressurePa,
-            specs.Gamma);
+            specs.Gamma,
+            specs.ChamberTempK,
+            specs.MolarMass);
         List<Vector2> contour = RaoContour.GetProfile(physics);
 
         // 2. Hollow chamber wall shell
@@ -143,7 +155,9 @@ public static class AeroForgeEngine
             specs.ThrustkN,
             specs.ChamberPressureBar,
             specs.AmbientPressurePa,
-            specs.Gamma);
+            specs.Gamma,
+            specs.ChamberTempK,
+            specs.MolarMass);
         return (BuildFlightGradeEngine(specs).mshAsMesh(), physics);
     }
 }

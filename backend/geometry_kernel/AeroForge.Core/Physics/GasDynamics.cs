@@ -37,7 +37,7 @@ public static class GasDynamics
     private const float RUniv = 8314.462618f;
 
     /// <summary>
-    /// Size a MethaLOX-class engine from thrust (kN) and chamber pressure (bar).
+    /// Size any LOX/hydrocarbon or LOX/LH2-class engine from thrust (kN), Pc (bar), and gas props.
     /// </summary>
     public static GasDynamicsResult Calculate(
         float thrustkN,
@@ -77,9 +77,11 @@ public static class GasDynamics
         float Lconv = (rc - rt) / MathF.Tan(30f * MathF.PI / 180f);
         float Lbell = 0.80f * (re - rt) / MathF.Tan(15f * MathF.PI / 180f);
         float LcylRaw = vc / (MathF.PI * rc * rc) - 0.5f * Lconv;
-        float Lcyl = Math.Clamp(LcylRaw, rt * 1.6f, rt * 3.8f);
-        // Cap overall length so 50 kN forges stay under ~10–15 MB STL at 1.5–2.0 mm voxels.
-        float length = Math.Clamp(Lcyl + Lconv + Lbell, 140f, 300f);
+        float Lcyl = Math.Clamp(LcylRaw, rt * 1.6f, rt * 4.2f);
+        // Length scales with thrust so 10 kN vs 80 kN engines look clearly different.
+        float maxLen = Math.Clamp(150f + thrustkN * 3.4f, 160f, 420f);
+        float minLen = Math.Clamp(110f + thrustkN * 1.2f, 120f, 220f);
+        float length = Math.Clamp(Lcyl + Lconv + Lbell, minLen, maxLen);
 
         float mdot = Pc * at / cStar;
         float isp = F / (mdot * G0);

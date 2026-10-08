@@ -61,16 +61,26 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 def _infer_preset(prompt: str, preset_hint: str) -> str:
+    """Resolve engine family from prompt keywords, else honor the UI preset."""
     p = (prompt or "").lower()
     hint = (preset_hint or "").lower()
-    if "aerospike" in p or "spike" in p:
+    if hint == "regen":
+        hint = "regenerative"
+
+    # Strong prompt keywords win.
+    if "aerospike" in p or ("spike" in p and "nozzle" in p):
         return "aerospike"
-    if "swirl" in p and "injector" in p:
+    if any(k in p for k in ("swirl injector", "injector swirler", "pintle", "injector faceplate", "injector plate")):
         return "swirler"
-    if any(k in p for k in ("nozzle", "bell", "regen", "chamber", "rocket engine", "methalox")):
+    if any(k in p for k in ("regen", "regenerative", "rao", "bell nozzle", "cooling channel", "cooling jacket")):
         return "regenerative"
-    if hint in ("aerospike", "regenerative", "swirler", "regen"):
-        return "regenerative" if hint == "regen" else hint
+
+    # Explicit UI selection is respected for general "engine/nozzle/thruster" prompts.
+    if hint in ("aerospike", "regenerative", "swirler"):
+        return hint
+
+    if any(k in p for k in ("nozzle", "chamber", "rocket", "engine", "thruster", "methalox", "rp-1", "lh2")):
+        return "regenerative"
     return "regenerative"
 
 
@@ -132,12 +142,27 @@ def orchestrate(
 
     model_used = _model()
     ai: dict[str, Any] = {}
-    reasoning = (
-        "Algorithm X generative synthesis (deterministic field math, not LLM geometry): "
-        "PhysicsEngine Rao gas core → GyroidHeatExchangerEngine (TPMS, throat-dense) → "
-        "BiomimeticManifoldEngine (Murray-law tree) → AlgorithmicInjectorEngine "
-        "(60–120 coax swirlers + LOX/CH₄ plenums)."
-    )
+    fuel = sized.get("propellant_label", propellant)
+    if inferred == "aerospike":
+        reasoning = (
+            f"Truncated aerospike sized for {thrust_kn:.0f} kN @ {chamber_pressure_mpa:.1f} MPa "
+            f"({fuel}). ContourPointSpline plug + conformal spiral cooling; throat Ø "
+            f"{2.0 * sized['throat_radius_mm']:.1f} mm, length {sized['length_mm']:.0f} mm."
+        )
+    elif inferred == "swirler":
+        reasoning = (
+            f"Coaxial swirl injector head for {thrust_kn:.0f} kN-class {fuel} feed "
+            f"@ {chamber_pressure_mpa:.1f} MPa. Faceplate diameter tracks chamber radius "
+            f"({sized['chamber_radius_mm']:.0f} mm); element count scales with throat area."
+        )
+    else:
+        reasoning = (
+            f"Regen Rao bell sized for {thrust_kn:.0f} kN @ {chamber_pressure_mpa:.1f} MPa ({fuel}). "
+            "Algorithm X field CEM: PhysicsEngine → GyroidHeatExchangerEngine → "
+            "BiomimeticManifoldEngine → AlgorithmicInjectorEngine. "
+            f"Isp {sized['isp_s']:.0f} s · ε {sized['expansion_ratio']:.1f} · "
+            f"throat Ø {2.0 * sized['throat_radius_mm']:.1f} mm · L {sized['length_mm']:.0f} mm."
+        )
 
     # Core path: skip NIM by default. Optional enrichment with a hard wall-clock timeout.
     if not skip_llm:
@@ -190,16 +215,17 @@ def orchestrate(
     helix = float(specs_in.get("HelixTurns", geo_in.get("helix_turns", 2.8)))
     depth = float(specs_in.get("ChannelDepthMm", 2.5))
     pipe_d = float(specs_in.get("PipeDiameterMm", 18.0))
-    injector_n = int(specs_in.get("InjectorElementCount", 72))
-    if injector_n < 60:
-        injector_n = 72
-    injector_n = min(120, max(60, injector_n))
+    # Scale injector count with throat area / thrust class (not a fixed 72).
+    injector_n = int(round(48 + thrust_kn * 0.9))
+    injector_n = min(120, max(36, injector_n))
+    if inferred == "swirler":
+        channel_count = min(48, max(12, int(round(8 + thrust_kn * 0.35))))
+    elif inferred == "aerospike":
+        channel_count = min(32, max(8, int(round(6 + thrust_kn * 0.22))))
 
     engine_specs = {
-        "ThrustkN": float(specs_in.get("ThrustkN", thrust_kn)),
-        "ChamberPressureBar": float(
-            specs_in.get("ChamberPressureBar", chamber_pressure_mpa * 10.0)
-        ),
+        "ThrustkN": float(thrust_kn),
+        "ChamberPressureBar": float(chamber_pressure_mpa * 10.0),
         "CoolingChannelCount": channel_count,
         "WallThicknessMm": wall_mm,
         "ChannelDepthMm": depth,
@@ -208,13 +234,18 @@ def orchestrate(
         "InjectorElementCount": injector_n,
         "AmbientPressurePa": ambient_pressure_pa,
         "Gamma": float(sized.get("gamma", 1.20)),
+        "ChamberTempK": float(sized.get("chamber_temp_k", 3550.0)),
+        "MolarMass": float(sized.get("molar_mass", 21.0)),
+        "Propellant": propellant,
         "VoxelMm": voxel_mm,
     }
 
+    # Always drive primary dimensions from live thermo (thrust / Pc / propellant).
+    # LLM geometry hints must not freeze a single 50 kN MethaLOX envelope.
     geometry = {
-        "throat_radius_mm": float(geo_in.get("throat_radius_mm", sized["throat_radius_mm"])),
-        "exit_radius_mm": float(geo_in.get("exit_radius_mm", sized["exit_radius_mm"])),
-        "length_mm": float(geo_in.get("length_mm", min(300.0, sized["length_mm"]))),
+        "throat_radius_mm": float(sized["throat_radius_mm"]),
+        "exit_radius_mm": float(sized["exit_radius_mm"]),
+        "length_mm": float(sized["length_mm"]),
         "channel_count": channel_count,
         "channel_radius_mm": float(geo_in.get("channel_radius_mm", depth * 0.5)),
         "injector_elements": injector_n,

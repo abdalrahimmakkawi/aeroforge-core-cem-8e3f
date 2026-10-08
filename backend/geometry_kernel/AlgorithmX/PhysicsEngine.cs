@@ -8,6 +8,7 @@ namespace AlgorithmX.Core;
 
 /// <summary>
 /// First-principles gas-path solid for Algorithm X (Rao CD contour → revolved SDF body).
+/// Thrust, Pc, and propellant (γ, Tc, M) all drive the sized geometry.
 /// </summary>
 public static class PhysicsEngine
 {
@@ -16,7 +17,9 @@ public static class PhysicsEngine
             specs.ThrustkN,
             specs.ChamberPressureBar,
             specs.AmbientPressurePa,
-            specs.Gamma);
+            specs.Gamma,
+            specs.ChamberTempK > 0 ? specs.ChamberTempK : 3550f,
+            specs.MolarMass > 0 ? specs.MolarMass : 21f);
 
     /// <summary>Solid of revolution of the gas-side Rao contour (hot-gas volume).</summary>
     public static Voxels GetGasPath(EngineSpecs specs)

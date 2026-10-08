@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Viewport3D, type ViewMode } from "@/components/Viewport3D";
 import { API_BASE, cn } from "@/lib/utils";
+import { sizeEngine, type PropellantId, type SizedThermo } from "@/lib/thermo";
 
 /** Browser/proxy often dies around 60s; Core forges should finish well under this. */
 const DESIGN_TIMEOUT_MS = 120_000;
@@ -38,9 +39,22 @@ type DesignResult = {
 };
 
 const PRESETS = [
-  { id: "aerospike", label: "Aerospike" },
-  { id: "regenerative", label: "Regenerative bell" },
-  { id: "swirler", label: "Injector swirler" },
+  {
+    id: "aerospike",
+    label: "Aerospike",
+    prompt: "Design a truncated aerospike thruster with conformal spiral cooling passages.",
+  },
+  {
+    id: "regenerative",
+    label: "Regenerative bell",
+    prompt:
+      "Design a regeneratively cooled Rao bell rocket nozzle with gyroid cooling jacket and propellant manifolds.",
+  },
+  {
+    id: "swirler",
+    label: "Injector swirler",
+    prompt: "Design a coaxial swirl injector faceplate with LOX/fuel plenums and film-cooling orifices.",
+  },
 ] as const;
 
 const FUELS = [
@@ -60,9 +74,7 @@ function fmt(n: number | string | undefined, digits = 2): string {
 }
 
 export default function Studio() {
-  const [prompt, setPrompt] = useState(
-    "Design a 50 kN MethaLOX rocket engine nozzle with integrated regenerative cooling channels."
-  );
+  const [prompt, setPrompt] = useState(PRESETS[1].prompt);
   const [thrust, setThrust] = useState(50);
   const [pc, setPc] = useState(6.0);
   const [propellant, setPropellant] = useState<(typeof FUELS)[number]["id"]>("lox_methane");
@@ -74,11 +86,12 @@ export default function Studio() {
   const [chat, setChat] = useState<ChatItem[]>([
     {
       role: "system",
-      text: "Workbench ready. AeroForge.Core compiles a printable STL from thrust/Pc (deterministic CEM).",
+      text: "Workbench ready. Set thrust / Pc / propellant / family, then Forge — Algorithm X sizes any engine class from those inputs (not a fixed 50 kN design).",
     },
   ]);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [meshStale, setMeshStale] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -90,6 +103,20 @@ export default function Studio() {
     return `${API_BASE}${path}?v=${result.job_id}`;
   }, [result]);
 
+  // Instant client-side sizing — bars always track sliders (API sync is optional).
+  const liveThermo = useMemo(
+    () =>
+      sizeEngine({
+        thrustKn: thrust,
+        chamberPressureMpa: pc,
+        propellant: propellant as PropellantId,
+      }),
+    [thrust, pc, propellant]
+  );
+  // Live slider thermo always wins; forged thermo is only a snapshot of the last mesh.
+  const thermo: SizedThermo | Record<string, number | string> = liveThermo;
+  const metrics = result?.metrics;
+
   useEffect(() => {
     if (!busy) {
       setBusyElapsed(0);
@@ -99,6 +126,39 @@ export default function Studio() {
     const id = window.setInterval(() => setBusyElapsed(Math.round((Date.now() - t0) / 1000)), 250);
     return () => window.clearInterval(id);
   }, [busy]);
+
+  // Mark prior forge as stale when thermo inputs change so users re-forge for a new mesh.
+  useEffect(() => {
+    if (result) setMeshStale(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when slider inputs change
+  }, [thrust, pc, propellant, preset]);
+
+  // Optional API sync (keeps backend / client formulas aligned when server is up).
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({
+          thrust_kn: String(thrust),
+          chamber_pressure_mpa: String(pc),
+          propellant,
+        });
+        await fetch(`${API_BASE}/api/thermo?${qs}`, { signal: ctrl.signal });
+      } catch {
+        /* client-side thermo already drives the UI */
+      }
+    }, 200);
+    return () => {
+      ctrl.abort();
+      window.clearTimeout(timer);
+    };
+  }, [thrust, pc, propellant]);
+
+  function selectPreset(id: (typeof PRESETS)[number]["id"]) {
+    setPreset(id);
+    const p = PRESETS.find((x) => x.id === id);
+    if (p) setPrompt(p.prompt);
+  }
 
   async function runDesign() {
     if (busy) return;
@@ -146,13 +206,15 @@ export default function Studio() {
         throw new Error(msg || `Design failed (${res.status})`);
       }
       setResult(data);
+      setMeshStale(false);
       const kb = (data.metrics?.stl_bytes ?? 0) / 1024;
       const pkb = (data.metrics?.stl_preview_bytes ?? 0) / 1024;
+      const family = data.preset || preset;
       setChat((c) => [
         ...c,
         {
           role: "agent",
-          text: `${data.reasoning}\n\nKernel ${data.kernel_mode} (${data.model}) · ${Math.round(data.compile_ms)} ms · full ${kb.toFixed(0)} KB · viewport ${pkb > 0 ? pkb.toFixed(0) + " KB" : "n/a"}`,
+          text: `${data.reasoning}\n\nFamily ${family} · kernel ${data.kernel_mode} (${data.model}) · ${Math.round(data.compile_ms)} ms · full ${kb.toFixed(0)} KB · viewport ${pkb > 0 ? pkb.toFixed(0) + " KB" : "n/a"}`,
         },
       ]);
       requestAnimationFrame(() => {
@@ -185,9 +247,6 @@ export default function Studio() {
     a.remove();
   }
 
-  const thermo = result?.thermo;
-  const metrics = result?.metrics;
-
   return (
     <div className="min-h-screen text-[var(--ink)]">
       <header className="border-b border-[var(--line)] bg-[var(--surface)]">
@@ -218,7 +277,7 @@ export default function Studio() {
             <PaneHead icon={<Terminal className="h-4 w-4" />} title="Command console" />
             <div className="flex flex-wrap gap-2 px-5 py-4">
               {PRESETS.map((p) => (
-                <SegButton key={p.id} active={preset === p.id} onClick={() => setPreset(p.id)}>
+                <SegButton key={p.id} active={preset === p.id} onClick={() => selectPreset(p.id)}>
                   {p.label}
                 </SegButton>
               ))}
@@ -284,7 +343,30 @@ export default function Studio() {
                 <Stat label="ε" value={thermo ? fmt(thermo.expansion_ratio, 2) : "—"} />
                 <Stat label="Cf" value={thermo ? fmt(thermo.cf, 3) : "—"} />
                 <Stat label="c*" value={thermo ? `${fmt(thermo.c_star_m_s, 0)} m/s` : "—"} />
+                <Stat
+                  label="Throat Ø"
+                  value={
+                    thermo?.throat_radius_mm != null
+                      ? `${fmt(Number(thermo.throat_radius_mm) * 2, 1)} mm`
+                      : "—"
+                  }
+                />
+                <Stat
+                  label="Length"
+                  value={thermo?.length_mm != null ? `${fmt(thermo.length_mm, 0)} mm` : "—"}
+                />
               </div>
+              <p className="text-[11px] leading-5 text-[var(--muted)]">
+                Isp / ε / throat / length update as you drag. Click{" "}
+                <span className="font-medium text-[var(--ink-soft)]">Forge design</span> to compile a
+                new mesh for this thrust · Pc · propellant ·{" "}
+                {PRESETS.find((p) => p.id === preset)?.label ?? preset}.
+                {meshStale && result ? (
+                  <span className="mt-1 block text-[var(--accent)]">
+                    Inputs changed — viewport mesh is from the previous forge.
+                  </span>
+                ) : null}
+              </p>
             </div>
           </section>
         </aside>

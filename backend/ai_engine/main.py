@@ -138,6 +138,27 @@ def propellants() -> dict[str, Any]:
     return thermo.PROPELLANTS
 
 
+@app.get("/api/thermo")
+def thermo_preview(
+    thrust_kn: float = 50.0,
+    chamber_pressure_mpa: float = 6.0,
+    propellant: str = "lox_methane",
+    ambient_pressure_pa: float = 101325.0,
+) -> dict[str, Any]:
+    """Live isentropic sizing for UI sliders (no geometry compile)."""
+    thrust_kn = min(100.0, max(5.0, thrust_kn))
+    chamber_pressure_mpa = min(15.0, max(1.0, chamber_pressure_mpa))
+    if propellant not in thermo.PROPELLANTS:
+        propellant = "lox_methane"
+    sized = thermo.size_engine(
+        thrust_n=thrust_kn * 1000.0,
+        chamber_pressure_pa=chamber_pressure_mpa * 1e6,
+        ambient_pressure_pa=ambient_pressure_pa,
+        propellant=propellant,
+    )
+    return {"ok": True, "thermo": sized}
+
+
 @app.post("/api/design", response_model=DesignResponse)
 def design(req: DesignRequest) -> DesignResponse:
     # Skip blocking NIM by default — UI sliders + thermo size EngineSpecs.
@@ -159,13 +180,17 @@ def design(req: DesignRequest) -> DesignResponse:
 
     geo = plan["geometry"]
     engine_specs = plan.get("engine_specs") if isinstance(plan.get("engine_specs"), dict) else {}
-    # Regenerative → Algorithm X field synthesis (not LLM geometry).
-    # Aerospike/swirler still use deterministic EngineBuilders.
-    use_algorithm_x = plan["preset"] == "regenerative" or not req.use_ai_script
+    # Route by engine family — Algorithm X for regenerative; builders for aerospike/swirler.
+    chosen = plan["preset"]
+    if chosen == "regenerative":
+        kernel_mode_req = "algorithmx"
+    else:
+        kernel_mode_req = "builder"
     payload: dict[str, Any] = {
         "job_id": job_id,
-        "mode": "algorithmx" if use_algorithm_x else "builder",
-        "preset": plan["preset"],
+        "mode": kernel_mode_req,
+        "preset": chosen,
+        "propellant": req.propellant,
         "thrust_kn": req.thrust_kn,
         "chamber_pressure_mpa": req.chamber_pressure_mpa,
         "throat_radius_mm": geo["throat_radius_mm"],
@@ -191,9 +216,13 @@ def design(req: DesignRequest) -> DesignResponse:
         "HelixTurns": engine_specs.get("HelixTurns", geo["helix_turns"]),
         "PipeDiameterMm": engine_specs.get("PipeDiameterMm", 18.0),
         "AmbientPressurePa": req.ambient_pressure_pa,
+        "Gamma": engine_specs.get("Gamma", plan["thermo"].get("gamma", 1.20)),
+        "ChamberTempK": engine_specs.get("ChamberTempK", plan["thermo"].get("chamber_temp_k", 3550)),
+        "MolarMass": engine_specs.get("MolarMass", plan["thermo"].get("molar_mass", 21)),
+        "Propellant": req.propellant,
     }
 
-    kernel_mode = "algorithmx"
+    kernel_mode = kernel_mode_req
     result = _run_kernel(payload)
     if not result.get("ok") and payload.get("mode") == "algorithmx":
         # Fall back to flight-grade AeroForge.Core if Algorithm X fails.
@@ -223,6 +252,27 @@ def design(req: DesignRequest) -> DesignResponse:
     if preview_path.exists():
         stable_preview.write_bytes(preview_path.read_bytes())
 
+    # Prefer kernel-reported physics so UI metrics match the forged mesh.
+    phys = result.get("physics") if isinstance(result.get("physics"), dict) else {}
+    if phys:
+        if phys.get("throat_radius_mm"):
+            geo["throat_radius_mm"] = float(phys["throat_radius_mm"])
+        if phys.get("exit_radius_mm"):
+            geo["exit_radius_mm"] = float(phys["exit_radius_mm"])
+        if phys.get("length_mm"):
+            geo["length_mm"] = float(phys["length_mm"])
+        if phys.get("expansion_ratio"):
+            plan["thermo"]["expansion_ratio"] = float(phys["expansion_ratio"])
+        if phys.get("throat_area_m2"):
+            plan["thermo"]["throat_area_m2"] = float(phys["throat_area_m2"])
+        if phys.get("isp_s"):
+            plan["thermo"]["isp_s"] = float(phys["isp_s"])
+        if phys.get("cf"):
+            plan["thermo"]["cf"] = float(phys["cf"])
+        plan["thermo"]["throat_radius_mm"] = geo["throat_radius_mm"]
+        plan["thermo"]["exit_radius_mm"] = geo["exit_radius_mm"]
+        plan["thermo"]["length_mm"] = geo["length_mm"]
+
     # Rough metal volume from STL size is wrong; use thermo length * annular estimate.
     rt = geo["throat_radius_mm"] / 10.0  # cm
     re = geo["exit_radius_mm"] / 10.0
@@ -230,9 +280,8 @@ def design(req: DesignRequest) -> DesignResponse:
     vol_cm3 = max(8.0, 0.35 * 3.1416 * ((re**2 + rt**2) / 2) * L * 0.15)
     mass_kg = vol_cm3 * INCONEL_DENSITY / 1000.0
 
-    # Clarify in the UI that geometry came from Algorithm X field engines, not LLM drafts.
     reasoning = plan["reasoning"]
-    if "Algorithm X" not in reasoning and "AlgorithmX" not in reasoning:
+    if chosen == "regenerative" and "Algorithm X" not in reasoning and "AlgorithmX" not in reasoning:
         reasoning = (
             "Geometry compiled by Algorithm X (deterministic field CEM) — not LLM mesh code. "
             + reasoning

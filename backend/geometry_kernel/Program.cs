@@ -67,6 +67,15 @@ public static class Program
                         var legacy = EngineSpec.FromJson(root);
                         mesh = EngineBuilders.Build(lib, legacy);
                         resolvedMode = "builder";
+                        // Report thermo-driven extents so the UI matches the forged mesh.
+                        var phys = GasDynamics.Calculate(
+                            specs.ThrustkN,
+                            specs.ChamberPressureBar,
+                            specs.AmbientPressurePa,
+                            specs.Gamma,
+                            specs.ChamberTempK,
+                            specs.MolarMass);
+                        physicsSummary = PhysicsSummary(phys, specs, preset);
                     }
                     else if (mode is "flight" or "core_flight")
                     {

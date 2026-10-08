@@ -70,16 +70,20 @@ public static class EngineBuilders
     public static Mesh BuildRegenBell(Library lib, EngineSpec spec)
     {
         // Prefer deterministic AeroForge.Core CEM (physics → Rao → modules).
+        float thrust = spec.ThrustKN > 1f ? spec.ThrustKN : EstimateThrustkN(spec);
+        float pcBar = spec.ChamberPressureMPa > 0.5f ? spec.ChamberPressureMPa * 10f : 60f;
         var coreSpecs = new AeroForge.Core.EngineSpecs
         {
-            ThrustkN = EstimateThrustkN(spec),
-            ChamberPressureBar = 60f,
-            CoolingChannelCount = Math.Clamp(spec.ChannelCount <= 16 ? 48 : spec.ChannelCount, 32, 64),
-            WallThicknessMm = MathF.Max(spec.WallMm, 3.5f),
-            ChannelDepthMm = Math.Min(2.5f, MathF.Max(spec.WallMm, 3.5f) * 0.7f),
+            ThrustkN = Math.Clamp(thrust, 5f, 100f),
+            ChamberPressureBar = Math.Clamp(pcBar, 10f, 150f),
+            CoolingChannelCount = Math.Clamp(spec.ChannelCount <= 16 ? 72 : spec.ChannelCount, 64, 128),
+            WallThicknessMm = MathF.Max(spec.WallMm, 3.2f),
+            ChannelDepthMm = Math.Min(2.5f, MathF.Max(spec.WallMm, 3.2f) * 0.7f),
             HelixTurns = MathF.Max(spec.HelixTurns, 2.0f),
+            Gamma = 1.20f,
+            ChamberTempK = 3550f,
+            MolarMass = 21f,
         };
-        // When explicit radii are provided (legacy path), still use Core modules via physics override length.
         return AeroForge.Core.AeroForgeEngine.BuildMesh(coreSpecs);
     }
 
@@ -98,8 +102,9 @@ public static class EngineBuilders
     /// </summary>
     public static Mesh BuildAerospike(Library lib, EngineSpec spec)
     {
-        float L = MathF.Max(spec.LengthMm, 140f);
-        float rt = MathF.Max(spec.ThroatRadiusMm, 12f);
+        // Scale plug from thermo-sized throat/exit/length (thrust-driven).
+        float L = Math.Clamp(spec.LengthMm, 120f, 420f);
+        float rt = MathF.Max(spec.ThroatRadiusMm, 8f);
         float re = MathF.Max(spec.ExitRadiusMm, rt * 1.7f);
         float wall = MathF.Max(spec.WallMm, 2.4f);
 
@@ -163,8 +168,9 @@ public static class EngineBuilders
 
     public static Mesh BuildSwirler(Library lib, EngineSpec spec)
     {
-        float R = MathF.Max(spec.ThroatRadiusMm * 1.9f, 36f);
-        float H = MathF.Max(spec.LengthMm * 0.4f, 55f);
+        // Faceplate diameter tracks chamber class from thermo throat radius.
+        float R = MathF.Max(spec.ThroatRadiusMm * 2.35f, 28f);
+        float H = Math.Clamp(spec.LengthMm * 0.28f, 40f, 160f);
         float wall = MathF.Max(spec.WallMm, 1.6f);
 
         var frame = new LocalFrame();
